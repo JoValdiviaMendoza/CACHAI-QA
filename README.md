@@ -17,6 +17,8 @@ Frameworks y librerías:
 
 Playwright — Framework central de automatización empleado para controlar los navegadores, realizar el escaneo automático del Front-End, interceptar elementos dinámicos y ejecutar las pruebas de manera ágil.
 
+Page Object Model (POM) organización y reutilización de componentes de prueba.
+
 Cloud / Infraestructura:
 
 BrowserStack — Plataforma en la nube utilizada para ejecutar y centralizar las revisiones de forma remota en distintos navegadores, generando un panel visual de reportes y grabaciones en video.
