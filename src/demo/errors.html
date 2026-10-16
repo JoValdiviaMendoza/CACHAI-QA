@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo CACHAI-QA · Página con error</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Página con error JS (a propósito)</h1>
+    <p>Sirve para probar la detección de errores de consola del framework.</p>
+  </header>
+
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="errors.html">Página con error JS</a>
+  </nav>
+
+  <main>
+    <h2>Errores simulados</h2>
+    <p>Al cargar, esta página escribe un error en la consola.</p>
+    <button type="button" id="btn-error">Provocar error</button>
+  </main>
+
+  <footer>
+    <p>CACHAI-QA demo · DUOC Alameda</p>
+  </footer>
+
+  <script>
+    console.error('Error de ejemplo CACHAI-QA: fallo simulado al cargar');
+    document.getElementById('btn-error').addEventListener('click', function () {
+      console.error('Error de ejemplo CACHAI-QA: fallo simulado al pulsar el botón');
+    });
+  </script>
+</body>
+</html>

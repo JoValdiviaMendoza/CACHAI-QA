@@ -1,0 +1,8 @@
+node_modules/
+reports/
+test-results/
+playwright-report/
+.env
+*.bak
+*.exe
+scan-report/

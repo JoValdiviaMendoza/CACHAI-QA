@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CACHAI-QA · Panel</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">🎯</span>
+      <div>
+        <h1>CACHAI-QA</h1>
+        <p class="subtitle" data-i18n="app.subtitle">Panel de escaneos y tests</p>
+      </div>
+    </div>
+    <div class="actions">
+      <div class="segmented" role="group" aria-label="Tema">
+        <button type="button" data-theme-set="system" data-i18n="settings.theme.system">Sistema</button>
+        <button type="button" data-theme-set="light" data-i18n="settings.theme.light">Claro</button>
+        <button type="button" data-theme-set="dark" data-i18n="settings.theme.dark">Oscuro</button>
+      </div>
+      <div class="segmented" role="group" aria-label="Idioma">
+        <button type="button" data-lang-set="es">ES</button>
+        <button type="button" data-lang-set="en">EN</button>
+      </div>
+      <button type="button" id="refresh" class="btn ghost" data-i18n="common.refresh">Actualizar</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="scans" data-i18n="tabs.scans">Escaneos</button>
+    <button type="button" class="tab" data-tab="tests" data-i18n="tabs.tests">Tests</button>
+    <button type="button" class="tab" data-tab="runs" data-i18n="tabs.runs">Ejecuciones</button>
+  </nav>
+
+  <main>
+    <section id="panel-scans" class="panel active">
+      <div class="panel-head">
+        <h2 data-i18n="scans.title">Escaneos guardados</h2>
+        <span id="scans-count" class="badge"></span>
+      </div>
+      <div id="scans-list" class="list"></div>
+      <p id="scans-empty" class="empty" hidden data-i18n="scans.empty">No hay escaneos todavía.</p>
+    </section>
+
+    <section id="panel-tests" class="panel">
+      <div class="panel-head">
+        <h2 data-i18n="tests.title">Tests</h2>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3 data-i18n="tests.spec">Especificación generada</h3>
+          <button type="button" id="run-tests" class="btn primary" data-i18n="tests.run">Ejecutar tests</button>
+        </div>
+        <p id="tests-spec-path" class="muted"></p>
+        <ul id="tests-cases" class="cases"></ul>
+        <p id="tests-empty" class="empty" hidden data-i18n="tests.noSpec">No hay tests generados. Ejecuta la opción [2] o [3].</p>
+      </div>
+
+      <div class="card">
+        <h3 data-i18n="tests.reports">Reportes HTML</h3>
+        <ul id="tests-reports" class="reports"></ul>
+        <p id="reports-empty" class="empty" hidden data-i18n="tests.noReports">Todavía no hay reportes.</p>
+      </div>
+
+      <div class="card" id="tests-output-card" hidden>
+        <div class="card-head">
+          <h3 data-i18n="tests.output">Salida</h3>
+          <span id="tests-status" class="badge"></span>
+        </div>
+        <pre id="tests-output" class="output"></pre>
+      </div>
+    </section>
+
+    <section id="panel-runs" class="panel">
+      <div class="panel-head">
+        <h2 data-i18n="runs.title">Ejecuciones de tests</h2>
+        <span id="runs-count" class="badge"></span>
+      </div>
+      <div id="runs-list" class="list"></div>
+      <p id="runs-empty" class="empty" hidden data-i18n="runs.empty">Todavía no hay ejecuciones de tests.</p>
+    </section>
+  </main>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="modal-title"></h3>
+        <button type="button" id="modal-close" class="btn ghost">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="confirm" class="modal" hidden>
+    <div class="modal-box small">
+      <div class="modal-head">
+        <h3 id="confirm-title"></h3>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-text"></p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" id="confirm-cancel" class="btn ghost"></button>
+        <button type="button" id="confirm-ok" class="btn danger"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

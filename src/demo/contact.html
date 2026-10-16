@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo CACHAI-QA · Contacto</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Contacto</h1>
+  </header>
+
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="about.html">Sobre el proyecto</a>
+    <a href="contact.html">Contacto</a>
+    <a href="gallery.html">Galería</a>
+  </nav>
+
+  <main>
+    <h2>Formulario de contacto</h2>
+    <form id="form-contacto" action="index.html" method="get">
+      <label>Nombre completo <input type="text" name="nombre" required /></label>
+      <label>Correo <input type="email" name="correo" required /></label>
+      <label>Teléfono <input type="tel" name="telefono" /></label>
+      <label>Motivo
+        <select name="motivo">
+          <option value="consulta">Consulta</option>
+          <option value="soporte">Soporte</option>
+          <option value="otro">Otro</option>
+        </select>
+      </label>
+      <label>Comentarios <textarea name="comentarios" rows="4"></textarea></label>
+      <label><input type="checkbox" name="acepto" /> Acepto los términos</label>
+      <button type="submit">Enviar mensaje</button>
+      <button type="reset">Limpiar</button>
+    </form>
+  </main>
+
+  <footer>
+    <p>CACHAI-QA demo · DUOC Alameda</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo CACHAI-QA · Inicio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Página de ejemplo CACHAI-QA</h1>
+    <p>Sitio local para probar el crawler y el framework sin salir a Internet.</p>
+  </header>
+
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="about.html">Sobre el proyecto</a>
+    <a href="contact.html">Contacto</a>
+    <a href="gallery.html">Galería</a>
+    <a href="errors.html">Página con error JS</a>
+    <a href="missing.html">Enlace roto (404)</a>
+    <a href="https://example.com" rel="nofollow">Enlace externo</a>
+  </nav>
+
+  <main>
+    <section>
+      <h2>Elementos para escanear</h2>
+      <p>Esta página contiene enlaces, imágenes, formularios y botones.</p>
+      <img src="img/a.svg" alt="Imagen A" width="120" />
+      <img src="img/b.svg" alt="Imagen B" width="120" />
+    </section>
+
+    <section>
+      <h2>Formulario de ejemplo</h2>
+      <form action="contact.html" method="get">
+        <label>Nombre <input type="text" name="nombre" placeholder="Tu nombre" /></label>
+        <label>Email <input type="email" name="email" /></label>
+        <label>Área
+          <select name="area">
+            <option value="qa">QA</option>
+            <option value="dev">Desarrollo</option>
+            <option value="ops">Operaciones</option>
+          </select>
+        </label>
+        <label>Mensaje <textarea name="mensaje" rows="3"></textarea></label>
+        <button type="submit">Enviar</button>
+        <button type="button" id="btn-saludo">Saludar</button>
+      </form>
+      <p id="salida" role="status"></p>
+    </section>
+  </main>
+
+  <footer>
+    <p>CACHAI-QA demo · DUOC Alameda</p>
+  </footer>
+
+  <script>
+    document.getElementById('btn-saludo').addEventListener('click', function () {
+      document.getElementById('salida').textContent = '¡Hola desde la página de ejemplo!';
+    });
+  </script>
+</body>
+</html>

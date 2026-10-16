@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo CACHAI-QA · Sobre el proyecto</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Sobre el proyecto</h1>
+  </header>
+
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="about.html">Sobre el proyecto</a>
+    <a href="contact.html">Contacto</a>
+    <a href="gallery.html">Galería</a>
+  </nav>
+
+  <main>
+    <h2>¿Qué es CACHAI-QA?</h2>
+    <p>Es un framework de automatización QA que escanea un sitio, genera tests y los ejecuta.</p>
+
+    <h2>Secciones</h2>
+    <ul>
+      <li><a href="index.html#elementos">Elementos</a></li>
+      <li><a href="gallery.html">Galería de imágenes</a></li>
+      <li><a href="contact.html">Formulario de contacto</a></li>
+    </ul>
+
+    <button type="button" id="btn-contar">Contar secciones</button>
+    <p id="contador" role="status"></p>
+  </main>
+
+  <footer>
+    <p>CACHAI-QA demo · DUOC Alameda</p>
+  </footer>
+
+  <script>
+    document.getElementById('btn-contar').addEventListener('click', function () {
+      var n = document.querySelectorAll('main h2').length;
+      document.getElementById('contador').textContent = 'Hay ' + n + ' secciones.';
+    });
+  </script>
+</body>
+</html>
