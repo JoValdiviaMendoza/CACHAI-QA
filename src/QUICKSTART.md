@@ -77,6 +77,23 @@ npm run crawl -- --url=https://blog.ejemplo.com --depth=2 --max-pages=30
 npm run crawl:headed -- --url=https://ejemplo.com --depth=1 --verbose
 ```
 
+## 🧪 De escaneo a pruebas (opción [4])
+
+Cada escaneo se guarda en `scan-report/*.json`. La opción `[4]` del menú toma uno de esos archivos (sin volver a escanear) y genera:
+
+- `reports/generated-tests/cachai-tests.spec.ts` — pruebas Playwright descritas en lenguaje natural (Dado / Cuando / Entonces).
+- `reports/generated-tests/cachai-tests.feature` — los mismos escenarios en Gherkin.
+- `reports/generated-tests/playwright.config.ts` — configuración de ejecución.
+- `reports/<host>-<fecha>.json` — resumen para el Panel Web.
+
+```bash
+# Generar desde el escaneo más reciente
+npm run tests:from-scan
+
+# Elegir un escaneo concreto y ejecutar las pruebas
+npx ts-node cli/from-scan.ts --scan=scan-report/mi-sitio-20260115-103000.json --run
+```
+
 ## 📝 Requisitos
 
 - Node.js 18+

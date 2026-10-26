@@ -23,31 +23,29 @@ echo   [1] Scan RAPIDO        (solo enlaces, pocas paginas)
 echo   [2] Scan COMPLETO      (todos los elementos, sin limite)
 echo   [3] Scan PERSONALIZADO (elegir tipo de elementos)
 echo.
-echo  TESTS (framework)
-echo   [4] Generar Tests (escaneo + genera, sin ejecutar)
-echo   [5] Ejecutar Tests (escaneo + genera + ejecuta)
+echo  PRUEBAS
+echo   [4] Generar / Ejecutar Tests (a partir de un escaneo)
 echo.
 echo  UTILIDADES
-echo   [6] Panel Web (Dashboard)
-echo   [7] Pagina de ejemplo (demo)
-echo   [8] Configurar .env
-echo   [9] Verificar / Instalar Node.js
-echo   [10] Verificar / Instalar Playwright (navegadores)
+echo   [5] Panel Web (Dashboard)
+echo   [6] Pagina de ejemplo (demo)
+echo   [7] Configurar .env
+echo   [8] Verificar / Instalar Node.js
+echo   [9] Verificar / Instalar Playwright (navegadores)
 echo   [0] Salir
 echo.
 set "OPCION="
-set /p OPCION="Selecciona opcion [0-10]: "
+set /p OPCION="Selecciona opcion [0-9]: "
 
 if "%OPCION%"=="1" goto SCAN_FAST
 if "%OPCION%"=="2" goto SCAN_FULL
 if "%OPCION%"=="3" goto SCAN_CUSTOM
-if "%OPCION%"=="4" goto DRYRUN
-if "%OPCION%"=="5" goto RUNTESTS
-if "%OPCION%"=="6" goto DASHBOARD
-if "%OPCION%"=="7" goto DEMO
-if "%OPCION%"=="8" goto CONFIG
-if "%OPCION%"=="9" goto SETUP
-if "%OPCION%"=="10" goto SETUP_PW
+if "%OPCION%"=="4" goto TESTGEN
+if "%OPCION%"=="5" goto DASHBOARD
+if "%OPCION%"=="6" goto DEMO
+if "%OPCION%"=="7" goto CONFIG
+if "%OPCION%"=="8" goto SETUP
+if "%OPCION%"=="9" goto SETUP_PW
 if "%OPCION%"=="0" exit /b
 
 echo Opcion invalida. Intenta de nuevo.
@@ -162,46 +160,30 @@ echo.
 pause
 goto MENU
 
-:DRYRUN
+:TESTGEN
 cls
-echo === FRAMEWORK - GENERAR TESTS ===
+echo === PRUEBAS - GENERAR / EJECUTAR (a partir de un escaneo) ===
 echo.
-set /p URL="Ingresa URL a escanear (ej: localhost:8099): "
-if "%URL%"=="" (
-    echo URL vacia.
-    timeout /t 2 >nul
+call :ENSURE_ENV
+if not exist "node_modules\.bin\ts-node.cmd" (
+    echo [!] No se encontro node_modules\.bin\ts-node.cmd
+    echo     Instala las dependencias con la opcion [8] y vuelve a intentarlo.
+    echo.
+    pause
     goto MENU
 )
-call :ENSURE_DEMO "%URL%"
-call :ENSURE_ENV
-echo.
-echo Generando tests (escaneo sin limite, 10 en paralelo)...
-echo.
-node dist/cli/index.js --local --url="%URL%" --depth=10 --max-pages=99999 --concurrency=10 --dry-run --generate-only -v
-echo.
-echo Tests generados en la carpeta: reports\ (archivo cachai-generated-FECHA.spec.ts)
-echo.
-pause
-goto MENU
-
-:RUNTESTS
-cls
-echo === FRAMEWORK - EJECUTAR TESTS ===
-echo.
-set /p URL="Ingresa URL a escanear (ej: localhost:8099): "
-if "%URL%"=="" (
-    echo URL vacia.
-    timeout /t 2 >nul
+if not exist "scan-report" (
+    echo [!] Todavia no hay escaneos guardados.
+    echo     Ejecuta primero una opcion [1], [2] o [3].
+    echo.
+    pause
     goto MENU
 )
-call :ENSURE_DEMO "%URL%"
-call :ENSURE_ENV
+echo Elige el escaneo y luego indica si quieres ejecutar las pruebas.
+echo Al final podras abrir el Panel Web con los resultados.
+echo Si el escaneo es de localhost:8099, inicia el demo con la opcion [6].
 echo.
-echo Ejecutando escaneo + Tests (10 en paralelo)...
-echo.
-node dist/cli/index.js --local --url="%URL%" --depth=10 --max-pages=99999 --concurrency=10 -v
-echo.
-echo Tests completados. Usa la opcion [6] (Panel Web) para ver el reporte.
+call :RUN_FROM_SCAN
 echo.
 pause
 goto MENU
@@ -274,7 +256,7 @@ if not exist "node_modules" (
 )
 echo.
 echo Node.js y dependencias del proyecto listos.
-echo Sugerencia: usa la opcion [10] para instalar los navegadores de Playwright.
+echo Sugerencia: usa la opcion [9] para instalar los navegadores de Playwright.
 pause
 goto MENU
 
@@ -284,13 +266,13 @@ echo === VERIFICAR / INSTALAR PLAYWRIGHT (NAVEGADORES) ===
 echo.
 where node >nul 2>nul
 if errorlevel 1 (
-    echo [!] Node.js no esta instalado. Primero instala Node.js con la opcion [9].
+    echo [!] Node.js no esta instalado. Primero instala Node.js con la opcion [8].
     timeout /t 3 >nul
     goto SETUP_NONODE
 )
 if not exist "node_modules" (
     echo [!] No se encontro node_modules.
-    echo     Instala primero las dependencias del proyecto con la opcion [9].
+    echo     Instala primero las dependencias del proyecto con la opcion [8].
     pause
     goto MENU
 )
@@ -349,7 +331,7 @@ echo ------------------------------------------------------------
 echo Si la instalacion fue exitosa:
 echo   1) CIERRA esta ventana
 echo   2) Vuelve a ejecutar cachai-qa.bat (para actualizar el PATH)
-echo   3) Usa las opciones [9] (Node/npm) y [10] (Playwright)
+echo   3) Usa las opciones [8] (Node/npm) y [9] (Playwright)
 echo ------------------------------------------------------------
 pause
 goto MENU
@@ -369,10 +351,15 @@ rem (Se usa la ruta local para que "npx" no descargue una copia suelta y rota.)
 if not exist "node_modules\.bin\ts-node.cmd" (
     echo.
     echo [!] No se encontro node_modules\.bin\ts-node.cmd
-    echo     Instala las dependencias con la opcion [9] y vuelve a intentarlo.
+    echo     Instala las dependencias con la opcion [8] y vuelve a intentarlo.
     exit /b
 )
 call "node_modules\.bin\ts-node.cmd" crawler.ts %*
+exit /b
+
+:RUN_FROM_SCAN
+rem Genera (y opcionalmente ejecuta) las pruebas a partir del JSON de un escaneo.
+call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts %*
 exit /b
 
 :ENSURE_ENV

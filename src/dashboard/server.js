@@ -86,7 +86,7 @@ function readScanMeta(full) {
     };
   }
 
-  // Formato del framework (opciones 2/3)
+  // Formato del framework (opcion 4)
   if (obj.metadata && typeof obj.metadata === 'object') {
     return {
       kind: 'framework',
@@ -185,7 +185,7 @@ function parseSlugDate(slug) {
 }
 
 /**
- * Lista las ejecuciones de tests (opciones 4/5 y el boton del panel).
+ * Lista las ejecuciones de tests (opcion 4 y el boton del panel).
  * Cada ejecucion se detecta por una carpeta reports/playwright-report-* y se
  * enriquece con el resumen JSON del framework mas cercano en el tiempo.
  */
@@ -250,7 +250,7 @@ function startTestJob() {
     job.status = 'error';
     job.exitCode = 1;
     job.finished = Date.now();
-    job.output = 'No hay tests generados. Ejecuta primero la opcion [2] o [3] (Generar/Ejecutar Tests).';
+    job.output = 'No hay tests generados. Ejecuta primero la opcion [4] (Generar / Ejecutar Tests).';
     return job;
   }
 

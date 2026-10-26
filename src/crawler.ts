@@ -512,6 +512,7 @@ class SimpleCrawler {
           text: element.text.substring(0, 200),
           statusCode: isInternal ? undefined : 0,
           isInternal,
+          sourceUrl: url,
           parentUrl,
           depth,
           tagName: element.tagName,
@@ -584,7 +585,14 @@ class SimpleCrawler {
       totalPages: this.pageCount,
       totalLinks: this.results.length,
       links: this.results,
-      errors: this.errors
+      errors: this.errors,
+      scanMeta: {
+        elementType: this.options.elementType,
+        selector: this.options.selector,
+        depth: this.options.depth,
+        maxPages: this.options.maxPages,
+        concurrency: this.options.concurrency
+      }
     };
   }
 }
@@ -710,7 +718,7 @@ async function main() {
   if (connRefused) {
     console.log('\n  Pista: la conexion fue rechazada.');
     console.log('  Si es una URL local (localhost), el servidor no esta activo.');
-    console.log('  Inicia el servidor con la opcion [7] (Pagina de ejemplo) o [6] (Panel Web)');
+    console.log('  Inicia el servidor con la opcion [6] (Pagina de ejemplo) o [5] (Panel Web)');
     console.log('  y asegurate de dejar esa ventana abierta.\n');
   }
 

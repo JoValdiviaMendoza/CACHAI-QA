@@ -10,6 +10,8 @@
     "test:local": "npm run build && node dist/cli/index.js --local",
     "test:browserstack": "npm run build && node dist/cli/index.js --browserstack",
     "crawl": "ts-node crawler.ts",
+    "tests:from-scan": "ts-node cli/from-scan.ts",
+    "tests:from-scan:run": "ts-node cli/from-scan.ts --run",
     "demo": "node demo/serve.js",
     "dashboard": "node dashboard/server.js",
     "crawl:headed": "ts-node crawler.ts --headless=false",
