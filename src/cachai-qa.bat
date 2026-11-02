@@ -1,5 +1,8 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
+rem Trabajar siempre desde la carpeta del .bat (donde estan package.json y node_modules)
+cd /d "%~dp0"
 title CACHAI-QA v2.0 - Framework de Automatizacion QA
 cls
 
@@ -19,23 +22,22 @@ echo    DUOC Alameda - Capstone 2026
 echo ============================================================
 echo.
 echo  ESCANEOS
-echo   [1] Scan RAPIDO        (solo enlaces, pocas paginas)
-echo   [2] Scan COMPLETO      (todos los elementos, sin limite)
-echo   [3] Scan PERSONALIZADO (elegir tipo de elementos)
+echo   [1] Scan RAPIDO
+echo   [2] Scan COMPLETO
+echo   [3] Scan PERSONALIZADO  (elegir tipo de elementos)
 echo.
 echo  PRUEBAS
-echo   [4] Generar / Ejecutar Tests (a partir de un escaneo)
+echo   [4] Generar / Ejecutar Tests
 echo.
 echo  UTILIDADES
-echo   [5] Panel Web (Dashboard)
-echo   [6] Pagina de ejemplo (demo)
+echo   [5] Panel Web / Dashboard
+echo   [6] Pagina Demostración
 echo   [7] Configurar .env
-echo   [8] Verificar / Instalar Node.js
-echo   [9] Verificar / Instalar Playwright (navegadores)
+echo   [8] Verificar / Instalar Dependencias (Node / Playwright / Cucumber)
 echo   [0] Salir
 echo.
 set "OPCION="
-set /p OPCION="Selecciona opcion [0-9]: "
+set /p OPCION="Selecciona opcion [0-8]: "
 
 if "%OPCION%"=="1" goto SCAN_FAST
 if "%OPCION%"=="2" goto SCAN_FULL
@@ -44,8 +46,7 @@ if "%OPCION%"=="4" goto TESTGEN
 if "%OPCION%"=="5" goto DASHBOARD
 if "%OPCION%"=="6" goto DEMO
 if "%OPCION%"=="7" goto CONFIG
-if "%OPCION%"=="8" goto SETUP
-if "%OPCION%"=="9" goto SETUP_PW
+if "%OPCION%"=="8" goto SETUP_MENU
 if "%OPCION%"=="0" exit /b
 
 echo Opcion invalida. Intenta de nuevo.
@@ -68,7 +69,7 @@ echo Escaneando SOLO enlaces (1 nivel, hasta 50 paginas, 10 en paralelo)...
 echo.
 call :RUN_CRAWLER --url="%URL%" --type=links --depth=1 --max-pages=50 --concurrency=10 --verbose
 echo.
-echo Escaneo rapido finalizado. JSON guardado en scan-report\URL-fecha-hora.json
+echo Escaneo rapido finalizado. JSON guardado en scan-report\
 echo.
 pause
 goto MENU
@@ -90,7 +91,7 @@ echo Esto puede tardar en sitios grandes.
 echo.
 call :RUN_CRAWLER --url="%URL%" --type=all --depth=10 --max-pages=99999 --concurrency=10 --verbose
 echo.
-echo Escaneo completo finalizado. JSON guardado en scan-report\URL-fecha-hora.json
+echo Escaneo completo finalizado. JSON guardado en scan-report\
 echo.
 pause
 goto MENU
@@ -107,7 +108,7 @@ echo    [4] Botones
 echo    [5] Todo
 echo    [6] Selector CSS personalizado
 echo.
-echo  Puedes elegir VARIOS separados por coma. Ejemplos: 1   1,2   2,3,4
+echo  Puedes elegir VARIOS separados por coma. Ejemplos: 1    1,2    2,3,4
 echo  (la opcion 6 debe usarse sola)
 echo.
 set "TIPO="
@@ -167,26 +168,144 @@ echo.
 call :ENSURE_ENV
 if not exist "node_modules\.bin\ts-node.cmd" (
     echo [!] No se encontro node_modules\.bin\ts-node.cmd
-    echo     Instala las dependencias con la opcion [8] y vuelve a intentarlo.
+    echo      Instala las dependencias con la opcion [8] - Node.js
     echo.
     pause
     goto MENU
 )
 if not exist "scan-report" (
-    echo [!] Todavia no hay escaneos guardados.
-    echo     Ejecuta primero una opcion [1], [2] o [3].
+    echo [!] Todavia no hay escaneos guardados en scan-report\.
+    echo      Ejecuta primero una opcion [1], [2] o [3].
     echo.
     pause
     goto MENU
 )
-echo Elige el escaneo y luego indica si quieres ejecutar las pruebas.
-echo Al final podras abrir el Panel Web con los resultados.
-echo Si el escaneo es de localhost:8099, inicia el demo con la opcion [6].
+
+echo Selecciona uno de los ultimos escaneos realizados:
 echo.
-call :RUN_FROM_SCAN
+echo ------------------------------------------------------------
+echo  ID  -  Archivo de Escaneo JSON
+echo ------------------------------------------------------------
+
+set "count=0"
+for /f "delims=" %%f in ('dir /b /o:-d "scan-report\*.json" 2^>nul') do (
+    set /a count+=1
+    set "file!count!=%%f"
+    echo  [!count!]  %%f
+    if !count!==5 goto PROMPT_SELECT
+)
+
+if %count%==0 (
+    echo [!] No se encontraron archivos JSON en scan-report\.
+    pause
+    goto MENU
+)
+
+:PROMPT_SELECT
+echo ------------------------------------------------------------
+echo.
+set "SELECTION="
+set /p SELECTION="Elige el numero [1-%count%] (Enter = usar el mas reciente [1]): "
+
+if "%SELECTION%"=="" set "SELECTION=1"
+
+set "TARGET_JSON="
+if "%SELECTION%"=="1" set "TARGET_JSON=!file1!"
+if "%SELECTION%"=="2" set "TARGET_JSON=!file2!"
+if "%SELECTION%"=="3" set "TARGET_JSON=!file3!"
+if "%SELECTION%"=="4" set "TARGET_JSON=!file4!"
+if "%SELECTION%"=="5" set "TARGET_JSON=!file5!"
+
+if "!TARGET_JSON!"=="" (
+    echo [!] Seleccion invalida o archivo no encontrado.
+    timeout /t 2 >nul
+    goto TESTGEN
+)
+
+if not exist "scan-report\!TARGET_JSON!" (
+    echo [!] El archivo scan-report\!TARGET_JSON! no existe fisicamente.
+    pause
+    goto TESTGEN
+)
+
+call :ASK_ENGINE
+if "%ENGINE%"=="" goto MENU
+
+echo.
+echo Procesando escaneo: !TARGET_JSON!
+echo Motor seleccionado: %ENGINE%
+echo.
+
+if "%ENGINE%"=="cucumber" (
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --verbose --no-prompt --no-open
+    if errorlevel 1 goto TESTGEN_FAILED
+    if not exist "reports\cucumber" mkdir "reports\cucumber"
+    echo.
+    echo Ejecutando pruebas BDD con Cucumber...
+    echo.
+    call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js
+    set "BDD_EXIT=!ERRORLEVEL!"
+    call node cli\report-cucumber.js
+    if not "!BDD_EXIT!"=="0" echo [AVISO] Algunos escenarios BDD fallaron. Revisa el reporte.
+)
+
+if "%ENGINE%"=="playwright" (
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open
+)
+
+if "%ENGINE%"=="both" (
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open
+    if not exist "reports\cucumber" mkdir "reports\cucumber"
+    echo.
+    echo Ejecutando pruebas BDD con Cucumber...
+    echo.
+    call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js
+    set "BDD_EXIT=!ERRORLEVEL!"
+    call node cli\report-cucumber.js
+    if not "!BDD_EXIT!"=="0" echo [AVISO] Algunos escenarios BDD fallaron. Revisa el reporte.
+)
+
+echo.
+if exist "reports\bdd-metrics.json" (
+    echo === METRICAS BDD ===
+    type "reports\bdd-metrics.json"
+    echo.
+)
+echo Proceso finalizado. Reportes guardados en la carpeta reports\
+echo   - Playwright: reports\playwright-report-^<fecha^>\index.html
+echo   - Cucumber:   reports\cucumber\cucumber-report.html
+echo.
+set "OPENPANEL="
+set /p OPENPANEL="¿Abrir el panel web para ver los resultados? [S/N]: "
+if /i "!OPENPANEL!"=="S" (
+    start "CACHAI-QA - Panel Web" cmd /k node dashboard\server.js
+    echo Panel iniciado en una ventana nueva.
+)
 echo.
 pause
 goto MENU
+
+:TESTGEN_FAILED
+echo.
+echo [AVISO] No se pudieron generar las pruebas a partir del escaneo.
+echo     Revisa el mensaje anterior y vuelve a intentarlo.
+echo.
+pause
+goto MENU
+
+:ASK_ENGINE
+echo Motores disponibles:
+echo    [1] Cucumber (lenguaje natural / BDD) - Usa src\cucumber.js
+echo    [2] Playwright (.ts)
+echo    [3] Ambos
+set "ENGINE="
+set "ENGINEOPT="
+set /p ENGINEOPT="Elige motor [1-3] (Enter = 1): "
+if "%ENGINEOPT%"=="" set "ENGINE=cucumber"
+if "%ENGINEOPT%"=="1" set "ENGINE=cucumber"
+if "%ENGINEOPT%"=="2" set "ENGINE=playwright"
+if "%ENGINEOPT%"=="3" set "ENGINE=both"
+exit /b
 
 :DASHBOARD
 cls
@@ -238,7 +357,24 @@ start "CACHAI-QA - Pagina de ejemplo" cmd /k node demo\serve.js
 timeout /t 3 >nul
 exit /b
 
-:SETUP
+:SETUP_MENU
+cls
+echo === VERIFICAR / INSTALAR DEPENDENCIAS ===
+echo.
+echo    [1] Node.js y dependencias base - npm install
+echo    [2] Playwright - Navegadores Chromium / Firefox
+echo    [3] Cucumber - Dependencias BDD
+echo    [0] Volver al menu principal
+echo.
+set "SUBO="
+set /p SUBO="Elige opcion [1-3, 0]: "
+if "%SUBO%"=="1" goto SETUP_NODE
+if "%SUBO%"=="2" goto SETUP_PW
+if "%SUBO%"=="3" goto SETUP_CUCUMBER
+if "%SUBO%"=="0" goto MENU
+goto SETUP_MENU
+
+:SETUP_NODE
 cls
 echo === VERIFICAR / INSTALAR NODE.JS Y DEPENDENCIAS ===
 echo.
@@ -247,44 +383,69 @@ if errorlevel 1 goto SETUP_NONODE
 echo [OK] Node.js detectado:
 node -v
 echo.
-echo Verificando dependencias del proyecto (node_modules)...
+echo Verificando dependencias del proyecto - node_modules...
 if not exist "node_modules" (
-    echo [!] No se encontro node_modules. Instalando con "npm install"...
-    call npm install
+    echo [!] No se encontro node_modules. Instalando con npm install...
+    cmd /c npm install
 ) else (
     echo [OK] node_modules encontrado.
 )
 echo.
 echo Node.js y dependencias del proyecto listos.
-echo Sugerencia: usa la opcion [9] para instalar los navegadores de Playwright.
+echo.
 pause
-goto MENU
+goto SETUP_MENU
 
 :SETUP_PW
 cls
-echo === VERIFICAR / INSTALAR PLAYWRIGHT (NAVEGADORES) ===
+echo === VERIFICAR / INSTALAR PLAYWRIGHT NAVEGADORES ===
 echo.
 where node >nul 2>nul
 if errorlevel 1 (
-    echo [!] Node.js no esta instalado. Primero instala Node.js con la opcion [8].
+    echo [!] Node.js no esta instalado. Primero instalalo en la opcion 1 del menu de dependencias.
     timeout /t 3 >nul
-    goto SETUP_NONODE
+    goto SETUP_MENU
 )
 if not exist "node_modules" (
-    echo [!] No se encontro node_modules.
-    echo     Instala primero las dependencias del proyecto con la opcion [8].
+    echo [!] No se encontro node_modules. Instala primero Node.js y dependencias - opcion 1.
     pause
-    goto MENU
+    goto SETUP_MENU
 )
 echo [OK] Node.js detectado.
-echo Instalando navegadores de Playwright (chromium y firefox)...
-echo Puede tardar la primera vez: descarga los navegadores.
+echo Instalando navegadores de Playwright - chromium y firefox...
 echo.
-call npx playwright install chromium firefox
+cmd /c npx playwright install chromium firefox
 echo.
-echo Playwright listo. Los escaneos y tests ya pueden ejecutarse.
+echo Playwright listo.
+echo.
 pause
-goto MENU
+goto SETUP_MENU
+
+:SETUP_CUCUMBER
+cls
+echo === VERIFICAR / INSTALAR CUCUMBER BDD ===
+echo.
+where node >nul 2>nul
+if errorlevel 1 (
+    echo [!] Node.js no esta instalado. Primero instalalo en la opcion 1 del menu de dependencias.
+    timeout /t 3 >nul
+    goto SETUP_MENU
+)
+if not exist "node_modules" (
+    echo [!] No se encontro node_modules. Instala primero Node.js y dependencias - opcion 1.
+    pause
+    goto SETUP_MENU
+)
+echo Verificando modulos de Cucumber...
+if not exist "node_modules\@cucumber" (
+    echo [!] No se encontro Cucumber instalado. Instalando con npm...
+    cmd /c npm install --save-dev @cucumber/cucumber ts-node
+) else (
+    echo [OK] Modulos de Cucumber encontrados y listos.
+)
+echo.
+pause
+goto SETUP_MENU
 
 :NODE_MISSING
 cls
@@ -292,20 +453,20 @@ echo ============================================================
 echo    [AVISO] Node.js no esta instalado en este equipo
 echo ============================================================
 echo.
-echo CACHAI-QA necesita Node.js (incluye npm) para funcionar.
+echo CACHAI-QA necesita Node.js para funcionar.
 echo.
 timeout /t 2 >nul
 goto SETUP_NONODE
 
 :SETUP_NONODE
 cls
-echo === INSTALAR DEPENDENCIAS BASE (Node.js) ===
+echo === INSTALAR DEPENDENCIAS BASE - Node.js ===
 echo.
 echo Node.js no esta instalado.
 echo.
-echo   [W] Instalar automaticamente con winget (recomendado)
-echo   [M] Abrir la pagina de descarga manual de Node.js
-echo   [0] Volver al menu
+echo    [W] Instalar automaticamente con winget - recomendado
+echo    [M] Abrir la pagina de descarga manual de Node.js
+echo    [0] Volver al menu
 echo.
 set "SETUPOPT="
 set /p SETUPOPT="Elige opcion [W/M/0]: "
@@ -318,20 +479,19 @@ cls
 where winget >nul 2>nul
 if errorlevel 1 (
     echo [!] winget no esta disponible en este equipo.
-    echo     Se abrira la pagina de descarga manual.
+    echo      Se abrira la pagina de descarga manual.
     timeout /t 3 >nul
     goto SETUP_MANUAL
 )
 echo Instalando Node.js LTS con winget...
-echo (Windows puede solicitar permisos de administrador)
+echo Windows puede solicitar permisos de administrador.
 echo.
 winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
 echo.
 echo ------------------------------------------------------------
 echo Si la instalacion fue exitosa:
 echo   1) CIERRA esta ventana
-echo   2) Vuelve a ejecutar cachai-qa.bat (para actualizar el PATH)
-echo   3) Usa las opciones [8] (Node/npm) y [9] (Playwright)
+echo   2) Vuelve a ejecutar cachai-qa.bat para actualizar el PATH
 echo ------------------------------------------------------------
 pause
 goto MENU
@@ -346,24 +506,16 @@ pause
 goto MENU
 
 :RUN_CRAWLER
-rem Ejecuta el crawler con el ts-node LOCAL del proyecto.
-rem (Se usa la ruta local para que "npx" no descargue una copia suelta y rota.)
 if not exist "node_modules\.bin\ts-node.cmd" (
     echo.
     echo [!] No se encontro node_modules\.bin\ts-node.cmd
-    echo     Instala las dependencias con la opcion [8] y vuelve a intentarlo.
+    echo      Instala las dependencias con la opcion 8 - Node.js
     exit /b
 )
 call "node_modules\.bin\ts-node.cmd" crawler.ts %*
 exit /b
 
-:RUN_FROM_SCAN
-rem Genera (y opcionalmente ejecuta) las pruebas a partir del JSON de un escaneo.
-call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts %*
-exit /b
-
 :ENSURE_ENV
-rem Garantiza que exista el archivo .env (se crea desde .env.example la primera vez)
 if exist ".env" exit /b
 if not exist ".env.example" exit /b
 copy /y ".env.example" ".env" >nul
@@ -372,8 +524,6 @@ echo [i] Se creo el archivo .env a partir de .env.example
 exit /b
 
 :ADD_TIPO
-rem Acumula los tipos elegidos en la opcion [3] (soporta varios separados por coma).
-rem 1=links 2=images 3=forms 4=buttons 5=todo 6=selector CSS
 if "%~1"=="1" set "TIPOSEL=%TIPOSEL%links,"
 if "%~1"=="2" set "TIPOSEL=%TIPOSEL%images,"
 if "%~1"=="3" set "TIPOSEL=%TIPOSEL%forms,"

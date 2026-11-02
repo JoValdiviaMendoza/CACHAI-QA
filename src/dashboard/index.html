@@ -50,14 +50,30 @@
         <h2 data-i18n="tests.title">Tests</h2>
       </div>
 
+      <!-- Tarjeta Playwright tradicional -->
       <div class="card">
         <div class="card-head">
-          <h3 data-i18n="tests.spec">Especificación generada</h3>
+          <h3 data-i18n="tests.spec">Especificación generada (Playwright)</h3>
           <button type="button" id="run-tests" class="btn primary" data-i18n="tests.run">Ejecutar tests</button>
         </div>
         <p id="tests-spec-path" class="muted"></p>
         <ul id="tests-cases" class="cases"></ul>
         <p id="tests-empty" class="empty" hidden data-i18n="tests.noSpec">No hay tests generados. Ejecuta la opción [4].</p>
+      </div>
+
+      <!-- NUEVA TARJETA: Cucumber / BDD y Métricas Dinámicas -->
+      <div class="card" id="cucumber-card">
+        <div class="card-head">
+          <h3>Cucumber BDD & Métricas Gherkin</h3>
+          <span id="bdd-status-badge" class="badge">BDD Ready</span>
+        </div>
+        <p class="muted">Resultados y adaptabilidad dinámica de pruebas en lenguaje natural.</p>
+        <div id="bdd-metrics-container" style="margin: 12px 0; font-size: 0.95rem;">
+          <!-- Aquí se pueden pintar dinámicamente las métricas desde app.js -->
+          <p id="bdd-metrics-summary" class="muted">Cargando métricas BDD...</p>
+        </div>
+        <div id="cucumber-reports-container"></div>
+        <div id="cucumber-features"></div>
       </div>
 
       <div class="card">

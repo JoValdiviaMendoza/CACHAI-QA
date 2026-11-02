@@ -331,9 +331,15 @@ async function loadTests() {
   }
 }
 
+function statusClass(status) {
+  if (status === 'passed') return 'ok';
+  if (status === 'failed') return 'fail';
+  return 'run';
+}
+
 function renderTests() {
   if (!state.tests) return;
-  const { spec, reports } = state.tests;
+  const { spec, reports, bddMetrics, cucumber } = state.tests;
 
   $('#tests-spec-path').textContent = spec.exists ? spec.path : '';
   $('#tests-empty').hidden = spec.exists;
@@ -344,13 +350,75 @@ function renderTests() {
   const runBtn = $('#run-tests');
   runBtn.disabled = !spec.exists || !spec.hasConfig;
 
+  // Separar reportes Playwright y Cucumber
+  const pwReports = (reports || []).filter(r => r.type === 'playwright' || !r.type);
+  const cbReports = (reports || []).filter(r => r.type === 'cucumber');
+
   const list = $('#tests-reports');
-  $('#reports-empty').hidden = (reports || []).length > 0;
-  list.innerHTML = (reports || []).map((r) => `
+  $('#reports-empty').hidden = pwReports.length > 0;
+  list.innerHTML = pwReports.map((r) => `
     <li>
       <span>${esc(r.name)}</span>
       <a href="${esc(r.path)}" target="_blank" rel="noopener">${t('tests.open')}</a>
     </li>`).join('');
+
+  // Renderizar Cucumber BDD metrics y reportes si existen
+  const bddSummaryEl = $('#bdd-metrics-summary');
+  const bddReportsEl = $('#cucumber-reports-container');
+  const bddFeaturesEl = $('#cucumber-features');
+
+  if (bddMetrics) {
+    const scenariosPassed = Number(bddMetrics.scenariosPassed ?? bddMetrics.passed ?? 0);
+    const scenariosFailed = Number(bddMetrics.scenariosFailed ?? bddMetrics.failed ?? 0);
+    const stepsPassed = Number(bddMetrics.passed || 0);
+    bddSummaryEl.innerHTML = `
+      <strong>Features:</strong> ${esc(bddMetrics.totalFeatures || 0)} |
+      <strong>Escenarios:</strong> ${esc(bddMetrics.totalScenarios || 0)} |
+      <strong>Pasos:</strong> ${esc(bddMetrics.totalSteps || 0)} |
+      <span class="badge ok">Escenarios OK: ${esc(scenariosPassed)}</span>
+      <span class="badge fail">Escenarios fallidos: ${esc(scenariosFailed)}</span>
+      <span class="badge">Pasos OK: ${esc(stepsPassed)}</span>
+    `;
+  } else {
+    bddSummaryEl.textContent = 'No hay métricas BDD registradas todavía.';
+  }
+
+  if (cbReports.length > 0) {
+    bddReportsEl.innerHTML = `
+      <p style="margin-top: 8px;"><strong>Reportes BDD interactivos:</strong></p>
+      <ul class="reports">
+        ${cbReports.map(r => `<li><span>${esc(r.name)}</span> <a href="${esc(r.path)}" target="_blank" rel="noopener">${t('tests.open')}</a></li>`).join('')}
+      </ul>
+    `;
+  } else {
+    bddReportsEl.innerHTML = '';
+  }
+
+  // Escenarios y pasos en lenguaje natural (Gherkin) del último reporte BDD.
+  if (bddFeaturesEl) {
+    if (cucumber && Array.isArray(cucumber.features) && cucumber.features.length > 0) {
+      bddFeaturesEl.innerHTML = cucumber.features.map((feature) => `
+        <div class="cucumber-feature" style="margin-top: 14px;">
+          <h4 style="margin: 0 0 6px;">${esc(feature.name)}</h4>
+          ${(feature.scenarios || []).map((scenario) => `
+            <div class="cucumber-scenario" style="margin: 10px 0 10px 8px;">
+              <div style="margin-bottom: 6px;">
+                <span class="badge ${statusClass(scenario.status)}">${esc(scenario.status)}</span>
+                <strong>${esc(scenario.name)}</strong>
+              </div>
+              <ul class="cases">
+                ${(scenario.steps || []).map((step) => `
+                  <li>
+                    <span class="badge ${statusClass(step.status)}">${esc(step.status)}</span>
+                    <strong>${esc(step.keyword)}</strong> ${esc(step.name)}
+                  </li>`).join('')}
+              </ul>
+            </div>`).join('')}
+        </div>`).join('');
+    } else {
+      bddFeaturesEl.innerHTML = '<p class="muted">Ejecuta la opción [4] con Cucumber para ver aquí los escenarios en lenguaje natural.</p>';
+    }
+  }
 }
 
 async function runTests() {
@@ -436,9 +504,13 @@ function renderRuns() {
 
   list.innerHTML = runs.map((r) => {
     const meta = [];
+    const typeLabel = r.type === 'cucumber' ? 'Cucumber (BDD)' : 'Playwright';
+    meta.push(`<span class="badge">${typeLabel}</span>`);
     meta.push(`<span class="badge">${t('runs.date')}: ${esc(fmtDate(r.mtime))}</span>`);
     if (r.pages != null) meta.push(`<span class="badge">${t('runs.pages')}: ${esc(r.pages)}</span>`);
     if (r.tests != null) meta.push(`<span class="badge">${t('runs.tests')}: ${esc(r.tests)}</span>`);
+    if (r.passed != null) meta.push(`<span class="badge ok">OK: ${esc(r.passed)}</span>`);
+    if (r.failed != null) meta.push(`<span class="badge fail">Fallidos: ${esc(r.failed)}</span>`);
 
     return `
       <article class="scan">

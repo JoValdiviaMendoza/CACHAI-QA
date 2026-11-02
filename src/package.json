@@ -46,6 +46,7 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^13.3.0",
     "@types/axios": "^0.14.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.12.0",

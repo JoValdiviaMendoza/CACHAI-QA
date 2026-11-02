@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { spawn, spawnSync, exec } from 'child_process';
+import { CUCUMBER_STEPS_TEMPLATE } from './cucumber-steps-template';
 
 // ============================================
 // Constantes
@@ -27,6 +28,7 @@ const DEFAULT_OUT_DIR = path.join(REPORT_ROOT, 'generated-tests');
 const SPEC_NAME = 'cachai-tests.spec.ts';
 const FEATURE_NAME = 'cachai-tests.feature';
 const CONFIG_NAME = 'playwright.config.ts';
+const STEPS_NAME = 'cachai-steps.ts';
 
 const MAX_LINKS_PER_PAGE = 120;
 const MAX_IMAGES_PER_PAGE = 80;
@@ -774,6 +776,8 @@ async function main(): Promise<void> {
     .option('output', { alias: 'o', type: 'string', describe: 'Carpeta de salida de las pruebas' })
     .option('browsers', { type: 'string', default: 'chromium', describe: 'Navegadores separados por coma (ej: chromium,firefox)' })
     .option('timeout', { type: 'number', default: 60000, describe: 'Timeout por prueba (ms)' })
+    .option('prompt', { type: 'boolean', default: true, describe: 'Permitir preguntas interactivas (usa --no-prompt para desactivarlas)' })
+    .option('open', { type: 'boolean', default: true, describe: 'Ofrecer abrir el panel web al final (usa --no-open para omitirlo)' })
     .help()
     .alias('help', 'h')
     .parse();
@@ -810,6 +814,7 @@ async function main(): Promise<void> {
   const specPath = path.join(outDir, SPEC_NAME);
   const featurePath = path.join(outDir, FEATURE_NAME);
   const configPath = path.join(outDir, CONFIG_NAME);
+  const stepsPath = path.join(outDir, STEPS_NAME);
   const reportFolder = path.join(root, REPORT_ROOT, `playwright-report-${slugDate()}`);
   const resultsFile = path.join(root, REPORT_ROOT, 'results.json');
 
@@ -825,6 +830,9 @@ async function main(): Promise<void> {
   const specContent = buildSpecFile(pageSpecs, { scanPath: scanRel, generatedAt, totalTests });
   fs.writeFileSync(specPath, specContent, 'utf8');
   fs.writeFileSync(featurePath, buildFeatureFile(scan, pageSpecs), 'utf8');
+  // Los pasos BDD se regeneran junto con el .feature para que siempre coincidan
+  // con el Gherkin en lenguaje natural generado.
+  fs.writeFileSync(stepsPath, CUCUMBER_STEPS_TEMPLATE, 'utf8');
   fs.writeFileSync(
     configPath,
     buildConfigFile(toPosix(reportFolder), toPosix(resultsFile), Number(argv.timeout) || 60000, browsers),
@@ -856,6 +864,7 @@ async function main(): Promise<void> {
   console.log(`Escenarios:   ${totalTests} (lenguaje natural / BDD)`);
   console.log(`Spec:         ${toPosix(path.relative(root, specPath))}`);
   console.log(`Gherkin:      ${toPosix(path.relative(root, featurePath))}`);
+  console.log(`Pasos BDD:    ${toPosix(path.relative(root, stepsPath))}`);
   console.log(`Config:       ${toPosix(path.relative(root, configPath))}`);
   console.log(`Resumen JSON: ${toPosix(path.relative(root, summaryPath))}`);
   if (scan.errors && scan.errors.length > 0) {
@@ -863,7 +872,7 @@ async function main(): Promise<void> {
   }
   console.log('');
 
-  const interactive = Boolean(process.stdin.isTTY);
+  const interactive = Boolean(process.stdin.isTTY) && Boolean(argv.prompt);
   let shouldRun = Boolean(argv.run);
 
   if (!argv.run && interactive) {
@@ -886,7 +895,7 @@ async function main(): Promise<void> {
     console.log('Pruebas generadas sin ejecutar. Podrás ejecutarlas desde el panel web.');
   }
 
-  if (interactive) {
+  if (interactive && argv.open) {
     const answer = await ask('¿Abrir el panel web (Dashboard) ahora? [S/N]: ');
     if (/^(s|si|sí|y|yes)$/i.test(answer)) {
       openDashboard(root);

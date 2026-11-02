@@ -136,10 +136,96 @@ function resolveScanPath(file) {
   return allowed ? full : null;
 }
 
+/** Convierte un reporte JSON de Cucumber en métricas y escenarios legibles. */
+function parseCucumberReport(file) {
+  const candidates = file
+    ? [file]
+    : [
+        path.join(ROOT, 'reports', 'cucumber', 'cucumber-report.json'),
+        path.join(ROOT, 'reports', 'cucumber-report.json')
+      ];
+  const target = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!target) return null;
+
+  let features;
+  try {
+    features = readJsonFile(target);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(features)) return null;
+
+  const totals = {
+    totalFeatures: features.length,
+    totalScenarios: 0,
+    totalSteps: 0,
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    undefined: 0,
+    scenariosPassed: 0,
+    scenariosFailed: 0,
+    scenariosSkipped: 0
+  };
+
+  const parsedFeatures = features.map((feature) => {
+    const scenarios = [];
+    for (const element of feature.elements || []) {
+      if (element.type !== 'scenario') continue;
+      totals.totalScenarios += 1;
+
+      const allSteps = element.steps || [];
+      const hookFailed = allSteps.some((step) => step.hidden && step.result && step.result.status === 'failed');
+      const steps = allSteps
+        .filter((step) => !step.hidden)
+        .map((step) => {
+          const status = (step.result && step.result.status) || 'undefined';
+          totals.totalSteps += 1;
+          if (status === 'passed') totals.passed += 1;
+          else if (status === 'failed') totals.failed += 1;
+          else if (status === 'skipped' || status === 'pending') totals.skipped += 1;
+          else totals.undefined += 1;
+          return {
+            keyword: String(step.keyword || '').trim(),
+            name: String(step.name || ''),
+            status
+          };
+        });
+
+      let status = 'passed';
+      if (hookFailed || steps.some((step) => step.status === 'failed')) status = 'failed';
+      else if (steps.some((step) => step.status === 'undefined')) status = 'undefined';
+      else if (steps.length > 0 && steps.every((step) => step.status === 'skipped')) status = 'skipped';
+
+      if (status === 'passed') totals.scenariosPassed += 1;
+      else if (status === 'failed') totals.scenariosFailed += 1;
+      else totals.scenariosSkipped += 1;
+
+      scenarios.push({ name: String(element.name || ''), status, steps });
+    }
+    return { name: String(feature.name || ''), uri: String(feature.uri || ''), scenarios };
+  });
+
+  const st = safeStat(target);
+  return {
+    reportPath: path.relative(ROOT, target).replace(/\\/g, '/'),
+    generatedAt: st ? st.mtimeMs : null,
+    totals,
+    features: parsedFeatures
+  };
+}
+
+function formatSlug(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
 function getTestsInfo() {
   const genDir = path.join(ROOT, 'reports', 'generated-tests');
   const specPath = path.join(genDir, 'cachai-tests.spec.ts');
   const configPath = path.join(genDir, 'playwright.config.ts');
+  const cucumber = parseCucumberReport();
 
   const spec = {
     exists: false,
@@ -161,19 +247,69 @@ function getTestsInfo() {
   }
 
   const reportsDir = path.join(ROOT, 'reports');
+  const cucumberDir = path.join(reportsDir, 'cucumber');
   const reports = [];
+
   if (fs.existsSync(reportsDir)) {
     for (const name of fs.readdirSync(reportsDir)) {
-      if (!name.startsWith('playwright-report-')) continue;
-      const idx = path.join(reportsDir, name, 'index.html');
-      if (fs.existsSync(idx)) {
-        const st = safeStat(idx);
-        reports.push({ name, path: 'reports/' + name + '/index.html', mtime: st ? st.mtimeMs : 0 });
+      if (name.startsWith('playwright-report-')) {
+        const idx = path.join(reportsDir, name, 'index.html');
+        if (fs.existsSync(idx)) {
+          const st = safeStat(idx);
+          reports.push({ name, type: 'playwright', path: 'reports/' + name + '/index.html', mtime: st ? st.mtimeMs : 0 });
+        }
       }
     }
   }
-  reports.sort((a, b) => b.mtime - a.mtime);
-  return { spec, reports };
+
+  const addCucumberReport = (full, name) => {
+    if (!fs.existsSync(full)) return;
+    const st = safeStat(full);
+    reports.push({
+      name,
+      type: 'cucumber',
+      path: path.relative(ROOT, full).replace(/\\/g, '/'),
+      mtime: st ? st.mtimeMs : 0
+    });
+  };
+
+  // Reporte BDD actual y copias fechadas que deja cli/report-cucumber.js.
+  const nestedCucumber = path.join(cucumberDir, 'cucumber-report.html');
+  if (fs.existsSync(nestedCucumber)) {
+    addCucumberReport(nestedCucumber, 'cucumber-report.html');
+  } else {
+    addCucumberReport(path.join(reportsDir, 'cucumber-report.html'), 'cucumber-report.html');
+  }
+  if (fs.existsSync(cucumberDir)) {
+    for (const name of fs.readdirSync(cucumberDir)) {
+      if (/^cucumber-report-\d{8}-\d{6}\.html$/i.test(name)) {
+        addCucumberReport(path.join(cucumberDir, name), name);
+      }
+    }
+  }
+
+  const seen = new Set();
+  const uniqueReports = reports
+    .filter((report) => {
+      if (seen.has(report.path)) return false;
+      seen.add(report.path);
+      return true;
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  // Cargar métricas BDD si existen; si no, se derivan del JSON de Cucumber.
+  let bddMetrics = null;
+  const metricsPath = path.join(reportsDir, 'bdd-metrics.json');
+  if (fs.existsSync(metricsPath)) {
+    try {
+      bddMetrics = readJsonFile(metricsPath);
+    } catch { /* ignorar */ }
+  }
+  if (!bddMetrics && cucumber) {
+    bddMetrics = { ...cucumber.totals, generatedAt: cucumber.generatedAt, report: cucumber.reportPath };
+  }
+
+  return { spec, reports: uniqueReports, bddMetrics, cucumber };
 }
 
 /** Convierte el slug de un reporte (YYYYMMDD-HHMMSS) a Date ISO, o null. */
@@ -185,12 +321,11 @@ function parseSlugDate(slug) {
 }
 
 /**
- * Lista las ejecuciones de tests (opcion 4 y el boton del panel).
- * Cada ejecucion se detecta por una carpeta reports/playwright-report-* y se
- * enriquece con el resumen JSON del framework mas cercano en el tiempo.
+ * Lista las ejecuciones de tests.
  */
 function listTestRuns() {
   const reportsDir = path.join(ROOT, 'reports');
+  const cucumberDir = path.join(reportsDir, 'cucumber');
   const runs = [];
 
   if (fs.existsSync(reportsDir)) {
@@ -203,10 +338,52 @@ function listTestRuns() {
       runs.push({
         id: name,
         slug,
+        type: 'playwright',
         startedAt: parseSlugDate(slug),
         mtime: st ? st.mtimeMs : 0,
         reportPath: 'reports/' + name + '/index.html'
       });
+    }
+  }
+
+  const addCucumberRun = (htmlFull, jsonFull, name) => {
+    const st = safeStat(htmlFull);
+    if (!st) return;
+    const slugMatch = /^cucumber-report-(\d{8}-\d{6})\.html$/i.exec(name);
+    const slug = slugMatch ? slugMatch[1] : formatSlug(st.mtimeMs);
+    const parsed = jsonFull && fs.existsSync(jsonFull) ? parseCucumberReport(jsonFull) : parseCucumberReport();
+    runs.push({
+      id: name,
+      slug,
+      type: 'cucumber',
+      startedAt: slugMatch ? parseSlugDate(slug) : new Date(st.mtimeMs).toISOString(),
+      mtime: st.mtimeMs,
+      reportPath: path.relative(ROOT, htmlFull).replace(/\\/g, '/'),
+      tests: parsed ? parsed.totals.totalScenarios : null,
+      passed: parsed ? parsed.totals.scenariosPassed : null,
+      failed: parsed ? parsed.totals.scenariosFailed : null,
+      skipped: parsed ? parsed.totals.scenariosSkipped : null
+    });
+  };
+
+  if (fs.existsSync(cucumberDir)) {
+    for (const name of fs.readdirSync(cucumberDir)) {
+      if (!/^cucumber-report-\d{8}-\d{6}\.html$/i.test(name)) continue;
+      const slug = name.replace(/^cucumber-report-/, '').replace(/\.html$/i, '');
+      addCucumberRun(
+        path.join(cucumberDir, name),
+        path.join(cucumberDir, 'cucumber-report-' + slug + '.json'),
+        name
+      );
+    }
+  }
+
+  // Si todavía no hay copias fechadas, muestra al menos el último reporte BDD.
+  const hasCucumberRuns = runs.some((run) => run.type === 'cucumber');
+  if (!hasCucumberRuns) {
+    const staticHtml = path.join(cucumberDir, 'cucumber-report.html');
+    if (fs.existsSync(staticHtml)) {
+      addCucumberRun(staticHtml, path.join(cucumberDir, 'cucumber-report.json'), 'cucumber-report.html');
     }
   }
 
@@ -224,7 +401,7 @@ function listTestRuns() {
     if (best && bestDiff <= WINDOW) {
       run.url = best.url;
       run.pages = best.pages;
-      run.tests = best.tests;
+      if (run.tests == null) run.tests = best.tests;
       run.summaryFile = best.file;
     }
   }
@@ -290,7 +467,7 @@ const MIME = {
 };
 
 function serveStatic(res, urlPath) {
-  // /reports/* se sirve desde la carpeta reports del proyecto (para abrir el reporte de Playwright)
+  // /reports/* se sirve desde la carpeta reports del proyecto
   const isReports = urlPath === '/reports' || urlPath.startsWith('/reports/');
   const baseDir = isReports ? path.join(ROOT, 'reports') : DASHBOARD_DIR;
 
@@ -393,30 +570,8 @@ process.on('unhandledRejection', (e) => {
 
 function openBrowser(url) {
   try {
-    if (process.platform === 'win32') exec(`start "" "${url}"`);
-    else if (process.platform === 'darwin') exec(`open "${url}"`);
-    else exec(`xdg-open "${url}"`);
-  } catch { /* ignorar */ }
-}
-
-function start(port, attempt = 0) {
-  const server = http.createServer((req, res) => {
-    handle(req, res).catch((e) => {
-      try { sendJson(res, 500, { error: String(e) }); } catch { /* ignore */ }
-    });
-  });
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE' && attempt < 10) {
-      start(port + 1, attempt + 1);
-    } else {
-      console.error('No se pudo iniciar el panel:', err.message);
-      process.exit(1);
-    }
-  });
-
-  server.listen(port, () => {
-    const url = `http://localhost:${port}`;
+    if (process.platform === 'win32') exec(`start "" "${url}"`); else if (process.platform === 'darwin') exec(`open "${url}"`);
+    else exec(`xdg-open "${url}"`); } catch { /* ignorar */ } }  function start(port, attempt = 0) { const server = http.createServer((req, res) => { handle(req, res).catch((e) => { try { sendJson(res, 500, { error: String(e) }); } catch { /* ignore */ } }); });  server.on('error', (err) => { if (err.code === 'EADDRINUSE' && attempt < 10) { start(port + 1, attempt + 1); } else { console.error('No se pudo iniciar el panel:', err.message); process.exit(1); } });  server.listen(port, () => { const url = `http://localhost:${port}`;
     console.log('');
     console.log('  ============================================================');
     console.log('   CACHAI-QA - Panel Web');
