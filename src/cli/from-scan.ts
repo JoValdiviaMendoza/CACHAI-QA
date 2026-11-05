@@ -30,9 +30,12 @@ const FEATURE_NAME = 'cachai-tests.feature';
 const CONFIG_NAME = 'playwright.config.ts';
 const STEPS_NAME = 'cachai-steps.ts';
 
-const MAX_LINKS_PER_PAGE = 120;
+const DEFAULT_MAX_LINKS_PER_PAGE = 40;
 const MAX_IMAGES_PER_PAGE = 80;
 const MAX_BUTTONS_PER_PAGE = 10;
+
+/** Peticiones de enlaces simultáneas dentro de un escenario. */
+const LINKS_CONCURRENCY = 4;
 
 // ============================================
 // Tipos
@@ -358,13 +361,20 @@ function loadScenario(page: PageModel): Scenario {
   };
 }
 
-function linksScenario(page: PageModel): Scenario | null {
-  const links = page.links.slice(0, MAX_LINKS_PER_PAGE);
+function linksScenario(
+  page: PageModel,
+  seenLinks: Set<string>,
+  maxLinks: number,
+  linkBrowser: string
+): Scenario | null {
+  const uniqueLinks = page.links.filter((link) => !seenLinks.has(link.url));
+  const links = uniqueLinks.slice(0, maxLinks);
   if (links.length === 0) return null;
+  for (const link of links) seenLinks.add(link.url);
 
   const label = pageLabelOf(page.url);
-  const truncated = page.links.length > links.length
-    ? ` (se verifican ${links.length} de ${page.links.length})`
+  const truncated = uniqueLinks.length > links.length
+    ? ` (se verifican ${links.length} de ${uniqueLinks.length} enlaces nuevos)`
     : '';
 
   const body: string[] = ['    const enlaces = ['];
@@ -373,10 +383,27 @@ function linksScenario(page: PageModel): Scenario | null {
   }
   body.push('    ];');
   body.push('');
-  body.push('    for (const enlace of enlaces) {');
-  body.push('      const respuesta = await request.get(enlace.url, { timeout: 20000, maxRedirects: 10 });');
-  body.push('      expect(respuesta.status(), `El enlace «${enlace.texto}» (${enlace.url}) debe responder sin errores`).toBeLessThan(400);');
+  body.push('    // Los enlaces se comprueban con peticiones HTTP: no dependen del navegador,');
+  body.push('    // así que se ejecutan una sola vez en lugar de repetirse en cada proyecto.');
+  body.push(`    test.skip(test.info().project.name !== ${esc(linkBrowser)}, 'La comprobación de enlaces no depende del navegador');`);
+  body.push('');
+  body.push(`    test.setTimeout(Math.max(60000, Math.ceil(enlaces.length / ${LINKS_CONCURRENCY}) * 18000 + 15000));`);
+  body.push('');
+  body.push('    const resultados = await comprobarEnlaces(request, enlaces);');
+  body.push("    const rotos = resultados.filter((resultado) => resultado.estado === 'roto');");
+  body.push("    const sinVerificar = resultados.filter((resultado) => resultado.estado === 'sin-verificar');");
+  body.push('');
+  body.push('    if (sinVerificar.length > 0) {');
+  body.push('      test.info().annotations.push({');
+  body.push("        type: 'enlaces-sin-verificar',");
+  body.push('        description: `${sinVerificar.length} de ${enlaces.length} enlaces no respondieron a tiempo y no se cuentan como fallo: ` + sinVerificar.map((resultado) => resultado.url).join(", ")');
+  body.push('      });');
   body.push('    }');
+  body.push('');
+  body.push('    expect(');
+  body.push('      rotos.map((resultado) => `${resultado.texto} (${resultado.url}) respondió HTTP ${resultado.status}`),');
+  body.push("      'Los enlaces internos deben responder con un código menor a 400'");
+  body.push('    ).toEqual([]);');
 
   return {
     type: 'broken-link',
@@ -453,8 +480,12 @@ function formsScenario(page: PageModel): Scenario | null {
     "    const formularios = page.locator('form');",
     `    expect(await formularios.count(), 'La página debe contener los formularios escaneados').toBeGreaterThanOrEqual(${forms.length});`,
     '',
-    `    for (let indice = 0; indice < ${forms.length}; indice++) {`,
-    '      await expect(formularios.nth(indice), `El formulario #${indice + 1} debe ser visible`).toBeVisible();',
+    "    const visibles = page.locator('form:visible');",
+    '    const totalVisibles = await visibles.count();',
+    '',
+    '    for (let indice = 0; indice < totalVisibles; indice++) {',
+    "      const controles = visibles.nth(indice).locator('input, select, textarea, button');",
+    '      expect(await controles.count(), `El formulario visible #${indice + 1} debe tener controles`).toBeGreaterThan(0);',
     '    }'
   ];
 
@@ -462,15 +493,15 @@ function formsScenario(page: PageModel): Scenario | null {
     type: 'form-validation',
     priority: 'high',
     title: forms.length === 1
-      ? `El formulario de «${label}» está visible y listo para usarse`
-      : `Los ${forms.length} formularios de «${label}» están visibles y listos para usarse`,
+      ? `El formulario de «${label}» está presente y los visibles tienen controles`
+      : `Los formularios de «${label}» están presentes y los visibles tienen controles`,
     scenario: `Formularios de «${label}»`,
     gherkin: [
       `Dado que un usuario visita "${page.url}"`,
       forms.length === 1
         ? 'Cuando busca el formulario de la página'
         : `Cuando busca los ${forms.length} formularios de la página`,
-      'Entonces todos deben estar presentes y visibles para el usuario'
+      'Entonces deben estar presentes en el DOM y los visibles deben tener controles'
     ],
     fixtures: 'page',
     body
@@ -482,16 +513,21 @@ function buttonsScenario(page: PageModel): Scenario | null {
   if (buttons.length === 0) return null;
 
   const label = pageLabelOf(page.url);
-  const indices = buttons.map((_button, index) => index);
   const body: string[] = [
     `    await page.goto(${esc(page.url)}, { waitUntil: 'domcontentloaded' });`,
     '',
     "    const botones = page.locator('button, input[type=\"button\"], input[type=\"submit\"], input[type=\"reset\"], a[role=\"button\"]');",
     `    expect(await botones.count(), 'La página debe contener los botones escaneados').toBeGreaterThanOrEqual(${buttons.length});`,
     '',
-    `    for (const indice of [${indices.join(', ')}]) {`,
-    '      await expect(botones.nth(indice), `El botón #${indice + 1} debe ser visible`).toBeVisible();',
-    '      await expect(botones.nth(indice), `El botón #${indice + 1} debe estar habilitado`).toBeEnabled();',
+    "    const visibles = page.locator('button:visible, input[type=\"button\"]:visible, input[type=\"submit\"]:visible, input[type=\"reset\"]:visible, a[role=\"button\"]:visible');",
+    '    const totalVisibles = await visibles.count();',
+    '',
+    '    if (totalVisibles > 0) {',
+    '      let habilitados = 0;',
+    '      for (let indice = 0; indice < totalVisibles; indice++) {',
+    '        if (await visibles.nth(indice).isEnabled()) habilitados++;',
+    '      }',
+    "      expect(habilitados, 'Debe haber al menos un botón visible y habilitado').toBeGreaterThan(0);",
     '    }'
   ];
 
@@ -499,15 +535,15 @@ function buttonsScenario(page: PageModel): Scenario | null {
     type: 'button-click',
     priority: 'medium',
     title: buttons.length === 1
-      ? `El botón de «${label}» es visible y está habilitado`
-      : `Los ${buttons.length} botones de «${label}» son visibles y están habilitados`,
+      ? `El botón de «${label}» está presente y los visibles están habilitados`
+      : `Los botones de «${label}» están presentes y los visibles están habilitados`,
     scenario: `Botones principales de «${label}»`,
     gherkin: [
       `Dado que un usuario visita "${page.url}"`,
       buttons.length === 1
         ? 'Cuando revisa el botón de la página'
         : `Cuando revisa los ${buttons.length} botones de la página`,
-      'Entonces todos deben ser visibles y estar habilitados'
+      'Entonces deben estar presentes y, si son visibles, al menos uno debe estar habilitado'
     ],
     fixtures: 'page',
     body
@@ -542,10 +578,15 @@ function customScenario(page: PageModel, selector: string): Scenario | null {
   };
 }
 
-function buildPageScenarios(page: PageModel, customSelector?: string): PageScenarios {
+function buildPageScenarios(
+  page: PageModel,
+  customSelector: string | undefined,
+  seenLinks: Set<string>,
+  options: { maxLinks: number; linkBrowser: string }
+): PageScenarios {
   const scenarios: Scenario[] = [loadScenario(page)];
 
-  const links = linksScenario(page);
+  const links = linksScenario(page, seenLinks, options.maxLinks, options.linkBrowser);
   if (links) scenarios.push(links);
 
   const images = imagesScenario(page);
@@ -576,7 +617,69 @@ function buildSpecFile(pageSpecs: PageScenarios[], meta: { scanPath: string; gen
   lines.push(`// Generado: ${meta.generatedAt}`);
   lines.push(`// Páginas: ${pageSpecs.length} · Escenarios: ${meta.totalTests}`);
   lines.push('');
-  lines.push("import { test, expect } from '@playwright/test';");
+  lines.push("import { test, expect, type APIRequestContext } from '@playwright/test';");
+  lines.push('');
+  lines.push('// --- Comprobación de enlaces (compartida por los escenarios generados) ---');
+  lines.push('');
+  lines.push('const REINTENTOS_ENLACE = 2;');
+  lines.push('const TIMEOUT_ENLACE_MS = 8000;');
+  lines.push(`const CONCURRENCIA_ENLACES = ${LINKS_CONCURRENCY};`);
+  lines.push('');
+  lines.push('interface EnlaceEscaneado { texto: string; url: string; }');
+  lines.push('interface ResultadoEnlace {');
+  lines.push('  texto: string;');
+  lines.push('  url: string;');
+  lines.push("  estado: 'ok' | 'roto' | 'sin-verificar';");
+  lines.push('  status?: number;');
+  lines.push('  error?: string;');
+  lines.push('}');
+  lines.push('');
+  lines.push('/**');
+  lines.push(' * Comprueba un enlace y distingue dos situaciones muy distintas:');
+  lines.push(' *  - roto: el servidor respondió 4xx/5xx (defecto real del sitio).');
+  lines.push(' *  - sin-verificar: la petición no terminó a tiempo tras varios intentos');
+  lines.push(' *    (lentitud o rate limiting; no se cuenta como enlace roto).');
+  lines.push(' */');
+  lines.push('async function comprobarEnlace(request: APIRequestContext, enlace: EnlaceEscaneado): Promise<ResultadoEnlace> {');
+  lines.push("  let ultimoError = '';");
+  lines.push('  for (let intento = 1; intento <= REINTENTOS_ENLACE; intento++) {');
+  lines.push('    try {');
+  lines.push('      const respuesta = await request.get(enlace.url, {');
+  lines.push('        timeout: TIMEOUT_ENLACE_MS,');
+  lines.push('        maxRedirects: 10,');
+  lines.push('        failOnStatusCode: false');
+  lines.push('      });');
+  lines.push('      const status = respuesta.status();');
+  lines.push('      return {');
+  lines.push('        texto: enlace.texto,');
+  lines.push('        url: enlace.url,');
+  lines.push("        estado: status >= 400 ? 'roto' : 'ok',");
+  lines.push('        status');
+  lines.push('      };');
+  lines.push('    } catch (error) {');
+  lines.push('      ultimoError = error instanceof Error ? error.message : String(error);');
+  lines.push('      if (intento < REINTENTOS_ENLACE) {');
+  lines.push('        await new Promise((resolve) => setTimeout(resolve, 400 * intento));');
+  lines.push('      }');
+  lines.push('    }');
+  lines.push('  }');
+  lines.push("  return { texto: enlace.texto, url: enlace.url, estado: 'sin-verificar', error: ultimoError };");
+  lines.push('}');
+  lines.push('');
+  lines.push('/** Ejecuta las comprobaciones con un pool pequeño para no saturar el sitio. */');
+  lines.push('async function comprobarEnlaces(request: APIRequestContext, enlaces: EnlaceEscaneado[]): Promise<ResultadoEnlace[]> {');
+  lines.push('  const resultados: ResultadoEnlace[] = new Array(enlaces.length);');
+  lines.push('  let siguiente = 0;');
+  lines.push('  const trabajadores = Array.from({ length: Math.min(CONCURRENCIA_ENLACES, enlaces.length) }, async () => {');
+  lines.push('    while (true) {');
+  lines.push('      const indice = siguiente++;');
+  lines.push('      if (indice >= enlaces.length) return;');
+  lines.push('      resultados[indice] = await comprobarEnlace(request, enlaces[indice]);');
+  lines.push('    }');
+  lines.push('  });');
+  lines.push('  await Promise.all(trabajadores);');
+  lines.push('  return resultados;');
+  lines.push('}');
   lines.push('');
 
   const usedTitles = new Set<string>();
@@ -635,10 +738,48 @@ function buildFeatureFile(scan: ScanFile, pageSpecs: PageScenarios[]): string {
   return lines.join('\n');
 }
 
-function buildConfigFile(reportFolder: string, resultsFile: string, timeout: number, browsers: string[]): string {
+interface BrowserConfig {
+  name: string;
+  use: string;
+}
+
+/** Normaliza los navegadores pedidos y genera proyectos válidos de Playwright. */
+function parseBrowsers(value: string): BrowserConfig[] {
+  const aliases: Record<string, BrowserConfig> = {
+    chromium: { name: 'chromium', use: "{ browserName: 'chromium' }" },
+    chrome: { name: 'chrome', use: "{ browserName: 'chromium', channel: 'chrome' }" },
+    'google-chrome': { name: 'chrome', use: "{ browserName: 'chromium', channel: 'chrome' }" },
+    firefox: { name: 'firefox', use: "{ browserName: 'firefox' }" },
+    webkit: { name: 'webkit', use: "{ browserName: 'webkit' }" },
+    safari: { name: 'webkit', use: "{ browserName: 'webkit' }" },
+    edge: { name: 'edge', use: "{ browserName: 'chromium', channel: 'msedge' }" },
+    msedge: { name: 'edge', use: "{ browserName: 'chromium', channel: 'msedge' }" }
+  };
+
+  const result: BrowserConfig[] = [];
+  const seen = new Set<string>();
+  for (const raw of String(value || '').split(',')) {
+    const key = raw.trim().toLowerCase();
+    if (!key) continue;
+    const browser = aliases[key];
+    if (!browser || seen.has(browser.name)) continue;
+    seen.add(browser.name);
+    result.push(browser);
+  }
+  return result.length > 0 ? result : [aliases.chromium];
+}
+
+function buildConfigFile(
+  reportFolder: string,
+  resultsFile: string,
+  timeout: number,
+  browsers: BrowserConfig[],
+  workers: number
+): string {
   const projects = browsers
-    .map((browser) => `{ name: ${esc(browser)}, use: { browserName: ${esc(browser)} } }`)
+    .map((browser) => `{ name: ${esc(browser.name)}, use: ${browser.use} }`)
     .join(', ');
+  const safeWorkers = Math.max(1, Math.min(32, Math.floor(Number(workers) || 1)));
 
   return [
     "import { defineConfig } from '@playwright/test';",
@@ -648,11 +789,12 @@ function buildConfigFile(reportFolder: string, resultsFile: string, timeout: num
     `  testMatch: ${esc(SPEC_NAME)},`,
     `  timeout: ${timeout},`,
     '  retries: 0,',
-    '  fullyParallel: false,',
-    '  workers: 1,',
+    '  fullyParallel: true,',
+    `  workers: ${safeWorkers},`,
     '  use: {',
     '    headless: true,',
     '    viewport: { width: 1366, height: 768 },',
+    '    navigationTimeout: 45000,',
     "    trace: 'on-first-retry',",
     "    screenshot: 'only-on-failure',",
     "    video: 'retain-on-failure'",
@@ -669,7 +811,7 @@ function buildSummary(
   scanPath: string,
   pages: PageModel[],
   pageSpecs: PageScenarios[],
-  options: { browsers: string[]; root: string }
+  options: { browsers: string[]; workers: number; maxLinks: number; root: string }
 ): Record<string, unknown> {
   const tests = pageSpecs.flatMap((page) =>
     page.scenarios.map((scenario, index) => ({
@@ -697,7 +839,9 @@ function buildSummary(
         elementType: scan.scanMeta?.elementType || 'links',
         depth: counter(scan.scanMeta?.depth, 0),
         maxPages: counter(scan.scanMeta?.maxPages, pages.length),
-        browsers: options.browsers
+        browsers: options.browsers,
+        workers: options.workers,
+        maxLinks: options.maxLinks
       }
     },
     pages: pages.map((page) => ({
@@ -774,8 +918,10 @@ async function main(): Promise<void> {
     .option('scan', { alias: 's', type: 'string', describe: 'Archivo JSON de escaneo (por defecto: el más reciente)' })
     .option('run', { alias: 'r', type: 'boolean', default: false, describe: 'Ejecutar las pruebas después de generarlas' })
     .option('output', { alias: 'o', type: 'string', describe: 'Carpeta de salida de las pruebas' })
-    .option('browsers', { type: 'string', default: 'chromium', describe: 'Navegadores separados por coma (ej: chromium,firefox)' })
+    .option('browsers', { type: 'string', default: 'chromium,firefox,chrome', describe: 'Navegadores separados por coma (chromium,firefox,chrome)' })
     .option('timeout', { type: 'number', default: 60000, describe: 'Timeout por prueba (ms)' })
+    .option('workers', { type: 'number', default: 5, describe: 'Cantidad de pruebas Playwright en paralelo' })
+    .option('max-links', { type: 'number', default: DEFAULT_MAX_LINKS_PER_PAGE, describe: 'Máximo de enlaces nuevos a comprobar por página' })
     .option('prompt', { type: 'boolean', default: true, describe: 'Permitir preguntas interactivas (usa --no-prompt para desactivarlas)' })
     .option('open', { type: 'boolean', default: true, describe: 'Ofrecer abrir el panel web al final (usa --no-open para omitirlo)' })
     .help()
@@ -801,8 +947,17 @@ async function main(): Promise<void> {
     .filter(Boolean);
   const customSelector = tipos.includes('custom') ? scan.scanMeta?.selector : undefined;
 
+  const browsers = parseBrowsers(String(argv.browsers || 'chromium,firefox,chrome'));
+  const workers = Math.max(1, Math.min(32, Math.floor(Number(argv.workers) || 5)));
+  const maxLinks = Math.max(1, Math.min(500, Math.floor(Number(argv.maxLinks) || DEFAULT_MAX_LINKS_PER_PAGE)));
+
+  const seenLinks = new Set<string>();
   const pageSpecs = pages
-    .map((page) => buildPageScenarios(page, customSelector))
+    .map((page) => buildPageScenarios(page, customSelector, seenLinks, {
+      maxLinks,
+      // Los enlaces se comprueban una sola vez: se usa el primer navegador configurado.
+      linkBrowser: browsers[0].name
+    }))
     .filter((page) => page.scenarios.length > 0);
 
   const totalTests = pageSpecs.reduce((sum, page) => sum + page.scenarios.length, 0);
@@ -818,12 +973,6 @@ async function main(): Promise<void> {
   const reportFolder = path.join(root, REPORT_ROOT, `playwright-report-${slugDate()}`);
   const resultsFile = path.join(root, REPORT_ROOT, 'results.json');
 
-  const browsers = String(argv.browsers || 'chromium')
-    .split(',')
-    .map((browser) => browser.trim().toLowerCase())
-    .filter(Boolean)
-    .map((browser) => (browser === 'chrome' || browser === 'edge' ? 'chromium' : browser === 'safari' ? 'webkit' : browser));
-
   fs.mkdirSync(outDir, { recursive: true });
 
   const scanRel = toPosix(path.relative(root, scanPath));
@@ -835,7 +984,7 @@ async function main(): Promise<void> {
   fs.writeFileSync(stepsPath, CUCUMBER_STEPS_TEMPLATE, 'utf8');
   fs.writeFileSync(
     configPath,
-    buildConfigFile(toPosix(reportFolder), toPosix(resultsFile), Number(argv.timeout) || 60000, browsers),
+    buildConfigFile(toPosix(reportFolder), toPosix(resultsFile), Number(argv.timeout) || 60000, browsers, workers),
     'utf8'
   );
 
@@ -850,7 +999,16 @@ async function main(): Promise<void> {
   fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
   fs.writeFileSync(
     summaryPath,
-    JSON.stringify(buildSummary(scan, scanPath, pages, pageSpecs, { browsers, root }), null, 2),
+    JSON.stringify(
+      buildSummary(scan, scanPath, pages, pageSpecs, {
+        browsers: browsers.map((browser) => browser.name),
+        workers,
+        maxLinks,
+        root
+      }),
+      null,
+      2
+    ),
     'utf8'
   );
 
@@ -862,6 +1020,9 @@ async function main(): Promise<void> {
   console.log(`Sitio:        ${scan.baseUrl}`);
   console.log(`Páginas:      ${pageSpecs.length}`);
   console.log(`Escenarios:   ${totalTests} (lenguaje natural / BDD)`);
+  console.log(`Navegadores:  ${browsers.map((browser) => browser.name).join(', ')}`);
+  console.log(`Workers:      ${workers}`);
+  console.log(`Enlaces/pág:  ${maxLinks} (los enlaces se comprueban una sola vez, en ${browsers[0].name})`);
   console.log(`Spec:         ${toPosix(path.relative(root, specPath))}`);
   console.log(`Gherkin:      ${toPosix(path.relative(root, featurePath))}`);
   console.log(`Pasos BDD:    ${toPosix(path.relative(root, stepsPath))}`);

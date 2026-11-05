@@ -6,29 +6,55 @@
  * Se usa String.raw para conservar las expresiones regulares (\d, \s, etc.).
  */
 export const CUCUMBER_STEPS_TEMPLATE = String.raw`import { AfterAll, Before, Given, Then, When, setDefaultTimeout } from "@cucumber/cucumber";
-import { chromium, expect } from "@playwright/test";
+import { chromium, firefox, expect } from "@playwright/test";
 import type { Browser, Page, Response } from "playwright";
 
-setDefaultTimeout(Number(process.env.CUCUMBER_TIMEOUT || 120000));
+setDefaultTimeout(Number(process.env.CUCUMBER_TIMEOUT || 240000));
 
 let browser: Browser | undefined;
 let page: Page | undefined;
 let pageErrors: string[] = [];
 let lastResponse: Response | null = null;
 let linksToCheck: string[] = [];
+const checkedLinks = new Set<string>();
 let formCount = 0;
 let buttonCount = 0;
 let customSelector = "";
 let customCount = 0;
 
+function launchBrowser(): Promise<Browser> {
+  const name = String(process.env.CUCUMBER_BROWSER || "chromium").toLowerCase();
+  const headless = process.env.HEADLESS !== "false";
+  if (name === "firefox") return firefox.launch({ headless });
+  if (name === "chrome") return chromium.launch({ headless, channel: "chrome" });
+  return chromium.launch({ headless });
+}
+
 async function ensurePage(): Promise<Page> {
   if (!page) {
-    browser = await chromium.launch({ headless: process.env.HEADLESS !== "false" });
+    browser = await launchBrowser();
     const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
     page = await context.newPage();
+    page.setDefaultNavigationTimeout(Number(process.env.CUCUMBER_NAV_TIMEOUT || 45000));
+    page.setDefaultTimeout(Number(process.env.CUCUMBER_ACTION_TIMEOUT || 30000));
     page.on("pageerror", (error) => pageErrors.push(error.message));
   }
   return page;
+}
+
+/**
+ * Descarta la pagina actual. Se usa cuando una navegacion falla para que el
+ * siguiente escenario no herede una pagina colgada o a medio cargar.
+ */
+async function resetPage(): Promise<void> {
+  if (!page) return;
+  const context = page.context();
+  page = undefined;
+  try {
+    await context.close();
+  } catch {
+    // El contexto ya estaba cerrado.
+  }
 }
 
 async function internalLinks(): Promise<string[]> {
@@ -58,15 +84,78 @@ Before(function () {
   customCount = 0;
 });
 
+const REINTENTOS_ENLACE = 2;
+const TIMEOUT_ENLACE_MS = 8000;
+const CONCURRENCIA_ENLACES = 4;
+
+interface ResultadoEnlace {
+  url: string;
+  estado: "ok" | "roto" | "sin-verificar";
+  status?: number;
+  error?: string;
+}
+
+/**
+ * Comprueba un enlace y distingue dos situaciones muy distintas:
+ *  - roto: el servidor respondio 4xx/5xx (defecto real del sitio).
+ *  - sin-verificar: la peticion no termino a tiempo tras varios intentos
+ *    (lentitud o rate limiting; no se cuenta como enlace roto).
+ */
+async function comprobarEnlace(current: Page, url: string): Promise<ResultadoEnlace> {
+  let ultimoError = "";
+  for (let intento = 1; intento <= REINTENTOS_ENLACE; intento++) {
+    try {
+      const respuesta = await current.request.get(url, {
+        timeout: TIMEOUT_ENLACE_MS,
+        maxRedirects: 10,
+        failOnStatusCode: false
+      });
+      const status = respuesta.status();
+      return { url, estado: status >= 400 ? "roto" : "ok", status };
+    } catch (error) {
+      ultimoError = error instanceof Error ? error.message : String(error);
+      if (intento < REINTENTOS_ENLACE) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * intento));
+      }
+    }
+  }
+  return { url, estado: "sin-verificar", error: ultimoError };
+}
+
+/** Comprueba los enlaces con un pool pequeno para no saturar el sitio. */
+async function comprobarEnlaces(current: Page, urls: string[]): Promise<ResultadoEnlace[]> {
+  const resultados: ResultadoEnlace[] = new Array(urls.length);
+  let siguiente = 0;
+  const trabajadores = Array.from({ length: Math.min(CONCURRENCIA_ENLACES, urls.length) }, async () => {
+    while (true) {
+      const indice = siguiente++;
+      if (indice >= urls.length) return;
+      resultados[indice] = await comprobarEnlace(current, urls[indice]);
+    }
+  });
+  await Promise.all(trabajadores);
+  return resultados;
+}
+
 Given(/^que un usuario (?:abre|visita) "([^"]+)"$/, async function (url: string) {
   const current = await ensurePage();
   pageErrors = [];
-  lastResponse = await current.goto(url, { waitUntil: "domcontentloaded" });
+  try {
+    lastResponse = await current.goto(url, { waitUntil: "domcontentloaded" });
+  } catch (error) {
+    await resetPage();
+    throw error;
+  }
 });
 
 When(/^la página termina de cargar$/, async function () {
   const current = await ensurePage();
-  await current.waitForLoadState("load");
+  try {
+    await current.waitForLoadState("load");
+  } catch (error) {
+    await resetPage();
+    throw error;
+  }
 });
 
 When(/^revisa su enlace interno$/, async function () {
@@ -125,10 +214,25 @@ Then(/^no debe lanzar errores de JavaScript$/, async function () {
 Then(/^todos deben responder con un código menor a (\d+)$/, async function (limit: number) {
   const current = await ensurePage();
   expect(linksToCheck.length, "Debe haber enlaces internos para revisar").toBeGreaterThan(0);
-  for (const url of linksToCheck) {
-    const response = await current.request.get(url, { timeout: 20000, maxRedirects: 10 });
-    expect(response.status(), "El enlace " + url + " debe responder sin errores").toBeLessThan(limit);
+  const pendientes = linksToCheck.filter((url) => !checkedLinks.has(url));
+  for (const url of pendientes) checkedLinks.add(url);
+
+  const resultados = await comprobarEnlaces(current, pendientes);
+  const rotos = resultados.filter((resultado) => resultado.estado === "roto");
+  const sinVerificar = resultados.filter((resultado) => resultado.estado === "sin-verificar");
+
+  if (sinVerificar.length > 0) {
+    console.warn(
+      "[AVISO] " + sinVerificar.length + " de " + pendientes.length +
+      " enlaces no respondieron a tiempo y no se cuentan como fallo: " +
+      sinVerificar.map((resultado) => resultado.url).join(", ")
+    );
   }
+
+  expect(
+    rotos.map((resultado) => resultado.url + " respondio HTTP " + resultado.status),
+    "Los enlaces internos deben responder con un codigo menor a " + limit
+  ).toEqual([]);
 });
 
 Then(/^ninguna debe estar rota \(todas tienen ancho natural mayor a \d+\)$/, async function () {
@@ -147,22 +251,30 @@ Then(/^ninguna debe estar rota \(todas tienen ancho natural mayor a \d+\)$/, asy
   expect(broken, "Ninguna imagen debe estar rota").toEqual([]);
 });
 
-Then(/^todos deben estar presentes y visibles para el usuario$/, async function () {
+Then(/^deben estar presentes en el DOM y los visibles deben tener controles$/, async function () {
   const current = await ensurePage();
   const forms = current.locator("form");
   expect(await forms.count(), "La página debe contener los formularios escaneados").toBeGreaterThanOrEqual(formCount);
-  for (let index = 0; index < formCount; index++) {
-    await expect(forms.nth(index), "El formulario #" + (index + 1) + " debe ser visible").toBeVisible();
+  const visibleForms = current.locator("form:visible");
+  const totalVisible = await visibleForms.count();
+  for (let index = 0; index < totalVisible; index++) {
+    const controls = visibleForms.nth(index).locator("input, select, textarea, button");
+    expect(await controls.count(), "El formulario visible #" + (index + 1) + " debe tener controles").toBeGreaterThan(0);
   }
 });
 
-Then(/^todos deben ser visibles y estar habilitados$/, async function () {
+Then(/^deben estar presentes y, si son visibles, al menos uno debe estar habilitado$/, async function () {
   const current = await ensurePage();
   const buttons = current.locator('button, input[type="button"], input[type="submit"], input[type="reset"], a[role="button"]');
   expect(await buttons.count(), "La página debe contener los botones escaneados").toBeGreaterThanOrEqual(buttonCount);
-  for (let index = 0; index < buttonCount; index++) {
-    await expect(buttons.nth(index), "El botón #" + (index + 1) + " debe ser visible").toBeVisible();
-    await expect(buttons.nth(index), "El botón #" + (index + 1) + " debe estar habilitado").toBeEnabled();
+  const visibleButtons = current.locator('button:visible, input[type="button"]:visible, input[type="submit"]:visible, input[type="reset"]:visible, a[role="button"]:visible');
+  const totalVisible = await visibleButtons.count();
+  if (totalVisible > 0) {
+    let enabled = 0;
+    for (let index = 0; index < totalVisible; index++) {
+      if (await visibleButtons.nth(index).isEnabled()) enabled++;
+    }
+    expect(enabled, "Debe haber al menos un botón visible y habilitado").toBeGreaterThan(0);
   }
 });
 

@@ -166,6 +166,9 @@ cls
 echo === PRUEBAS - GENERAR / EJECUTAR (a partir de un escaneo) ===
 echo.
 call :ENSURE_ENV
+set "PW_BROWSERS=chromium,firefox,chrome"
+set "PW_WORKERS=5"
+set "CUCUMBER_PARALLEL=5"
 if not exist "node_modules\.bin\ts-node.cmd" (
     echo [!] No se encontro node_modules\.bin\ts-node.cmd
     echo      Instala las dependencias con la opcion [8] - Node.js
@@ -234,6 +237,8 @@ if "%ENGINE%"=="" goto MENU
 echo.
 echo Procesando escaneo: !TARGET_JSON!
 echo Motor seleccionado: %ENGINE%
+echo Navegadores Playwright: %PW_BROWSERS%
+echo Workers Playwright: %PW_WORKERS% ^| Workers Cucumber: %CUCUMBER_PARALLEL%
 echo.
 
 if "%ENGINE%"=="cucumber" (
@@ -243,26 +248,31 @@ if "%ENGINE%"=="cucumber" (
     echo.
     echo Ejecutando pruebas BDD con Cucumber...
     echo.
-    call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js
+    call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js --parallel %CUCUMBER_PARALLEL%
     set "BDD_EXIT=!ERRORLEVEL!"
     call node cli\report-cucumber.js
+    call node cli\report-defects.js cucumber
     if not "!BDD_EXIT!"=="0" echo [AVISO] Algunos escenarios BDD fallaron. Revisa el reporte.
 )
 
 if "%ENGINE%"=="playwright" (
-    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS%
+    call node cli\report-defects.js playwright
 )
 
 if "%ENGINE%"=="both" (
-    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS%
     if not exist "reports\cucumber" mkdir "reports\cucumber"
     echo.
-    echo Ejecutando pruebas BDD con Cucumber...
+    echo Esperando 5 s antes de Cucumber para no saturar el sitio...
+    timeout /t 5 /nobreak >nul
+    echo Ejecutando pruebas BDD con Cucumber en %CUCUMBER_PARALLEL% workers...
     echo.
-    call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js
+    call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js --parallel %CUCUMBER_PARALLEL%
     set "BDD_EXIT=!ERRORLEVEL!"
     call node cli\report-cucumber.js
     if not "!BDD_EXIT!"=="0" echo [AVISO] Algunos escenarios BDD fallaron. Revisa el reporte.
+    call node cli\report-defects.js both
 )
 
 echo.
@@ -274,6 +284,7 @@ if exist "reports\bdd-metrics.json" (
 echo Proceso finalizado. Reportes guardados en la carpeta reports\
 echo   - Playwright: reports\playwright-report-^<fecha^>\index.html
 echo   - Cucumber:   reports\cucumber\cucumber-report.html
+echo   - Defectos:   reports\defectos-^<host^>-^<fecha^>.md
 echo.
 set "OPENPANEL="
 set /p OPENPANEL="¿Abrir el panel web para ver los resultados? [S/N]: "

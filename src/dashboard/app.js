@@ -12,12 +12,21 @@ const state = {
   overview: null,
   scanFilter: 'quick',
   runFilter: 'playwright',
-  runSearch: { playwright: '', cucumber: '' },
-  runStatus: { playwright: 'all' },
+  expandedRunGroups: { playwright: {}, cucumber: {} },
+  activeRunGroup: { playwright: null, cucumber: null },
   homeSegment: 'error',
   homeShowAll: false,
-  jobTimer: null
+  aboutTab: 'how',
+  scanFavorites: [],
+  selectedRun: { playwright: null, cucumber: null },
+  runDetail: { playwright: null, cucumber: null },
+  runDetailLoading: { playwright: false, cucumber: false }
 };
+
+try {
+  const savedFavorites = JSON.parse(localStorage.getItem('cq.scanFavorites') || '[]');
+  if (Array.isArray(savedFavorites)) state.scanFavorites = savedFavorites.filter((item) => typeof item === 'string');
+} catch { /* preferencias inválidas: se ignoran */ }
 
 /* ------------------------------------------------------------------ *
  * i18n
@@ -40,6 +49,10 @@ const I18N = {
     'tabs.home': 'Inicio',
     'tabs.scans': 'Escaneos',
     'tabs.runs': 'Ejecuciones',
+    'tabs.about': '¿Qué es CACHAI-QA?',
+    'about.title': '¿Qué hace CACHAI-QA?',
+    'about.tab.how': 'Cómo funciona',
+    'about.tab.glossary': 'Glosario',
     'home.emptyTitle': 'Sin datos todavía',
     'home.empty': 'Ejecuta un escaneo o una prueba desde la consola (opción 1, 2, 3 o 4) y pulsa Actualizar.',
     'home.detail': 'Ver desglose completo',
@@ -58,6 +71,7 @@ const I18N = {
     'home.errors.empty': 'No hay errores registrados en la última ejecución.',
     'home.errors.segmentEmpty': 'El segmento seleccionado no contiene errores.',
     'home.errors.showAll': 'Mostrar los {n} errores',
+    'home.errors.unique': 'defectos únicos',
     'home.segment.success': 'Éxitos',
     'home.segment.warning': 'Advertencias',
     'home.segment.error': 'Errores',
@@ -69,6 +83,11 @@ const I18N = {
     'scans.filter.quick': '⚡ Rápido',
     'scans.filter.full': '🌐 Completo',
     'scans.filter.custom': '🎯 Personalizado',
+    'scans.filter.favorites': '⭐ Guardados',
+    'scans.emptyFavorites': 'Todavía no marcaste ningún escaneo como guardado. Usa la estrella de una tarjeta.',
+    'scans.favorite.add': 'Guardar escaneo',
+    'scans.favorite.remove': 'Quitar de guardados',
+    'scans.deleteConfirmRuns': '¿Eliminar el escaneo "{name}"? También se eliminarán las ejecuciones asociadas de Playwright y Cucumber. Esta acción no se puede deshacer.',
     'scans.file': 'Archivo',
     'scans.url': 'URL',
     'scans.pages': 'Páginas',
@@ -80,28 +99,26 @@ const I18N = {
     'scans.kind.crawl': 'Crawler',
     'scans.kind.framework': 'Framework',
     'scans.kind.unknown': 'Desconocido',
+    'scans.group.crawl': 'Escaneos del crawler',
+    'scans.group.framework': 'Resúmenes de generación de tests',
+    'scans.group.unknown': 'Otros archivos',
     'scans.deleteConfirm': '¿Eliminar el escaneo "{name}"? Esta acción no se puede deshacer.',
     'confirm.title': 'Confirmar eliminación',
     'scans.detail': 'Detalle del escaneo',
     'scans.noLinks': 'Este archivo no contiene enlaces listados.',
     'scans.showing': 'Mostrando los primeros {n} de {total} enlaces.',
     'tests.spec': 'Especificación generada (Playwright)',
-    'tests.run': 'Ejecutar tests',
-    'tests.running': 'Ejecutando…',
+    'tests.specCount': '{n} casos',
     'tests.reports': 'Reportes HTML',
-    'tests.output': 'Salida',
     'tests.noSpec': 'No hay tests generados. Ejecuta primero la opción [4].',
     'tests.noReports': 'Todavía no hay reportes.',
     'tests.showing': 'Mostrando los primeros {n} de {total} tests.',
     'tests.open': 'Abrir',
-    'tests.status.done': 'Completado',
-    'tests.status.failed': 'Con fallos',
-    'tests.status.running': 'Ejecutando',
-    'tests.status.error': 'Error',
     'runs.title': 'Ejecuciones de tests',
     'runs.empty': 'Todavía no hay ejecuciones de tests.',
     'runs.date': 'Fecha',
     'runs.pages': 'Páginas',
+    'runs.pagesShort': 'pág.',
     'runs.tests': 'Tests',
     'runs.open': 'Abrir reporte',
     'runs.preview': 'Ver aquí',
@@ -109,10 +126,9 @@ const I18N = {
     'runs.filter.playwright': '🎭 Playwright',
     'runs.filter.cucumber': '🥒 Cucumber',
     'runs.filter.browserstack': '☁️ BrowserStack',
-    'runs.results': 'Resultados de la última ejecución',
+    'runs.results': 'Resultados de la ejecución',
     'runs.currentReport': 'Ver Reporte HTML',
     'runs.currentReportCucumber': 'Abrir Reporte HTML Actual',
-    'runs.traceViewer': 'Abrir Trace Viewer',
     'runs.history.executions': 'Historial de ejecuciones',
     'runs.history.reports': 'Historial de reportes',
     'runs.metric.tests': '🧪 Pruebas',
@@ -123,14 +139,24 @@ const I18N = {
     'runs.metric.success': '🟢 Éxito',
     'runs.metric.failedScenarios': '🔴 Fallidos',
     'runs.metric.skippedScenarios': '⚪ Omitidos',
-    'runs.searchPlaywright': 'Buscar ejecución...',
-    'runs.searchCucumber': 'Buscar reporte...',
-    'runs.status.all': 'Todos los estados',
-    'runs.status.failed': 'Con fallos',
-    'runs.status.passed': 'Sin fallos',
+    'runs.group.noUrl': 'Sin URL',
+    'runs.group.count': '{n} ejecuciones',
+    'runs.group.countOne': '1 ejecución',
+    'runs.group.countCucumber': '{n} reportes',
+    'runs.group.countCucumberOne': '1 reporte',
+    'runs.executionNumber': 'Ejecución {n}',
+    'runs.reportNumber': 'Reporte {n}',
+    'runs.bdd.summary': 'Features: {features} · Escenarios: {scenarios} · Pasos: {steps}',
+    'runs.noCounts': 'Sin métricas',
     'runs.latestExecution': 'Última ejecución',
     'runs.latestReport': 'Último reporte',
     'runs.current': 'Actual',
+    'runs.selected': 'Viendo {name} · {date}',
+    'runs.backToLatest': 'Volver a la última',
+    'runs.selectedLoading': 'Cargando resultados de la ejecución…',
+    'runs.selectedError': 'No se pudieron cargar los resultados de esta ejecución.',
+    'runs.delete': 'Eliminar ejecución',
+    'runs.deleteConfirm': '¿Eliminar la ejecución del {date}? Se borrarán su reporte HTML y sus datos asociados.',
     'runs.justNow': 'Hace un momento',
     'runs.minuteAgo': 'Hace 1 minuto',
     'runs.minutesAgo': 'Hace {n} minutos',
@@ -157,6 +183,8 @@ const I18N = {
     'runs.browserstack.soon': 'Integración con BrowserStack en desarrollo. Próximamente podrás visualizar aquí los resultados de las pruebas ejecutadas en la nube sobre múltiples navegadores y dispositivos reales.',
     'error.location': 'Dirección del error (ubicación)',
     'error.affected': 'URL afectada',
+    'error.browser': 'Navegador',
+    'error.occurrences': 'Repeticiones',
     'error.origin': 'Origen',
     'error.feature': 'Feature',
     'error.failedStep': 'Paso fallido',
@@ -171,6 +199,7 @@ const I18N = {
     'error.copied': 'Ruta copiada',
     'error.technical': 'Ver log técnico completo',
     'toast.deleted': 'Escaneo eliminado',
+    'toast.runDeleted': 'Ejecución eliminada',
     'toast.error': 'Ocurrió un error',
     'toast.refreshed': 'Actualizado'
   },
@@ -191,6 +220,10 @@ const I18N = {
     'tabs.home': 'Home',
     'tabs.scans': 'Scans',
     'tabs.runs': 'Runs',
+    'tabs.about': 'What is CACHAI-QA?',
+    'about.title': 'What does CACHAI-QA do?',
+    'about.tab.how': 'How it works',
+    'about.tab.glossary': 'Glossary',
     'home.emptyTitle': 'No data yet',
     'home.empty': 'Run a scan or test from the console (option 1, 2, 3 or 4) and press Refresh.',
     'home.detail': 'View full breakdown',
@@ -209,6 +242,7 @@ const I18N = {
     'home.errors.empty': 'No errors recorded in the last run.',
     'home.errors.segmentEmpty': 'The selected segment has no errors.',
     'home.errors.showAll': 'Show all {n} errors',
+    'home.errors.unique': 'unique defects',
     'home.segment.success': 'Passed',
     'home.segment.warning': 'Warnings',
     'home.segment.error': 'Errors',
@@ -220,6 +254,11 @@ const I18N = {
     'scans.filter.quick': '⚡ Quick',
     'scans.filter.full': '🌐 Full',
     'scans.filter.custom': '🎯 Custom',
+    'scans.filter.favorites': '⭐ Saved',
+    'scans.emptyFavorites': 'You have not starred any scan yet. Use the star on a card.',
+    'scans.favorite.add': 'Save scan',
+    'scans.favorite.remove': 'Remove from saved',
+    'scans.deleteConfirmRuns': 'Delete the scan "{name}"? Its associated Playwright and Cucumber runs will also be deleted. This cannot be undone.',
     'scans.file': 'File',
     'scans.url': 'URL',
     'scans.pages': 'Pages',
@@ -231,28 +270,26 @@ const I18N = {
     'scans.kind.crawl': 'Crawler',
     'scans.kind.framework': 'Framework',
     'scans.kind.unknown': 'Unknown',
+    'scans.group.crawl': 'Crawler scans',
+    'scans.group.framework': 'Test generation summaries',
+    'scans.group.unknown': 'Other files',
     'scans.deleteConfirm': 'Delete scan "{name}"? This cannot be undone.',
     'confirm.title': 'Confirm deletion',
     'scans.detail': 'Scan detail',
     'scans.noLinks': 'This file does not contain listed links.',
     'scans.showing': 'Showing the first {n} of {total} links.',
     'tests.spec': 'Generated specification (Playwright)',
-    'tests.run': 'Run tests',
-    'tests.running': 'Running…',
+    'tests.specCount': '{n} cases',
     'tests.reports': 'HTML reports',
-    'tests.output': 'Output',
     'tests.noSpec': 'No generated tests. Run option [4] first.',
     'tests.noReports': 'No reports yet.',
     'tests.showing': 'Showing the first {n} of {total} tests.',
     'tests.open': 'Open',
-    'tests.status.done': 'Completed',
-    'tests.status.failed': 'Failed',
-    'tests.status.running': 'Running',
-    'tests.status.error': 'Error',
     'runs.title': 'Test runs',
     'runs.empty': 'No test runs yet.',
     'runs.date': 'Date',
     'runs.pages': 'Pages',
+    'runs.pagesShort': 'pages',
     'runs.tests': 'Tests',
     'runs.open': 'Open report',
     'runs.preview': 'Preview',
@@ -260,10 +297,9 @@ const I18N = {
     'runs.filter.playwright': '🎭 Playwright',
     'runs.filter.cucumber': '🥒 Cucumber',
     'runs.filter.browserstack': '☁️ BrowserStack',
-    'runs.results': 'Latest run results',
+    'runs.results': 'Run results',
     'runs.currentReport': 'View HTML report',
     'runs.currentReportCucumber': 'Open current HTML report',
-    'runs.traceViewer': 'Open Trace Viewer',
     'runs.history.executions': 'Run history',
     'runs.history.reports': 'Report history',
     'runs.metric.tests': '🧪 Tests',
@@ -274,14 +310,24 @@ const I18N = {
     'runs.metric.success': '🟢 Passed',
     'runs.metric.failedScenarios': '🔴 Failed',
     'runs.metric.skippedScenarios': '⚪ Skipped',
-    'runs.searchPlaywright': 'Search run...',
-    'runs.searchCucumber': 'Search report...',
-    'runs.status.all': 'All states',
-    'runs.status.failed': 'With failures',
-    'runs.status.passed': 'Without failures',
+    'runs.group.noUrl': 'No URL',
+    'runs.group.count': '{n} runs',
+    'runs.group.countOne': '1 run',
+    'runs.group.countCucumber': '{n} reports',
+    'runs.group.countCucumberOne': '1 report',
+    'runs.executionNumber': 'Run {n}',
+    'runs.reportNumber': 'Report {n}',
+    'runs.bdd.summary': 'Features: {features} · Scenarios: {scenarios} · Steps: {steps}',
+    'runs.noCounts': 'No metrics',
     'runs.latestExecution': 'Latest run',
     'runs.latestReport': 'Latest report',
     'runs.current': 'Current',
+    'runs.selected': 'Viewing {name} · {date}',
+    'runs.backToLatest': 'Back to latest',
+    'runs.selectedLoading': 'Loading run results…',
+    'runs.selectedError': 'Could not load the results for this run.',
+    'runs.delete': 'Delete run',
+    'runs.deleteConfirm': 'Delete the run from {date}? Its HTML report and related data will be removed.',
     'runs.justNow': 'Just now',
     'runs.minuteAgo': '1 minute ago',
     'runs.minutesAgo': '{n} minutes ago',
@@ -308,6 +354,8 @@ const I18N = {
     'runs.browserstack.soon': 'BrowserStack integration is under development. Soon you will be able to view cloud test results across multiple browsers and real devices here.',
     'error.location': 'Error location',
     'error.affected': 'Affected URL',
+    'error.browser': 'Browser',
+    'error.occurrences': 'Occurrences',
     'error.origin': 'Origin',
     'error.feature': 'Feature',
     'error.failedStep': 'Failed step',
@@ -322,8 +370,144 @@ const I18N = {
     'error.copied': 'Path copied',
     'error.technical': 'View full technical log',
     'toast.deleted': 'Scan deleted',
+    'toast.runDeleted': 'Run deleted',
     'toast.error': 'Something went wrong',
     'toast.refreshed': 'Refreshed'
+  }
+};
+
+const ABOUT = {
+  es: {
+    intro: 'CACHAI-QA es un framework local de auditoría y pruebas automatizadas: escanea un sitio, genera pruebas a partir de lo que encuentra y las ejecuta en varios navegadores, dejando la evidencia en reportes HTML.',
+    howTitle: 'Cómo funciona',
+    howSubtitle: 'El flujo actual, de principio a fin.',
+    steps: [
+      { title: 'Escaneo', text: 'Playwright recorre la URL y guarda páginas, enlaces, formularios e imágenes en un JSON. Puedes elegir un escaneo Rápido, Completo o Personalizado.' },
+      { title: 'Generación', text: 'TypeScript transforma ese JSON en pruebas de Playwright (con Page Object Model) y en escenarios Gherkin con sus steps de Cucumber.' },
+      { title: 'Ejecución', text: 'Playwright corre en Chromium, Chrome y Firefox en paralelo; Cucumber usa Chromium por defecto (configurable). Los enlaces se validan por HTTP una sola vez para no repetir el trabajo en cada navegador.' },
+      { title: 'Resultados', text: 'Se generan reportes HTML de ambos motores, métricas y una lista de defectos únicos. Este panel agrupa todo por URL y por tipo de error.' }
+    ],
+    techTitle: 'Tecnologías',
+    techSubtitle: 'Lo que se usa hoy y lo que está planificado.',
+    tech: [
+      { name: 'Node.js', text: 'Entorno de ejecución del framework y del panel local.', current: true },
+      { name: 'TypeScript', text: 'Lógica de escaneo, generación de pruebas y tipado del proyecto.', current: true },
+      { name: 'Playwright', text: 'Automatización del navegador y motor de escaneo.', current: true },
+      { name: 'Gherkin + Cucumber', text: 'Escenarios en lenguaje natural y ejecución BDD.', current: true },
+      { name: 'Page Object Model', text: 'Organización reutilizable de páginas y selectores.', current: true },
+      { name: 'BrowserStack', text: 'Ejecución en la nube y Safari. Planificado, aún no integrado.', current: false }
+    ],
+    planned: 'Planificado',
+    current: 'En uso',
+    glossaryTitle: 'Glosario de errores comunes',
+    glossarySubtitle: 'Qué significa cada término que aparece en el panel.',
+    glossary: [
+      {
+        title: 'Enlaces y red',
+        items: [
+          { term: '404 / 4xx / 5xx', def: 'El servidor respondió con un error HTTP. Un 404 significa que la URL no existe; un 5xx indica un fallo del servidor.' },
+          { term: 'Timeout / sin verificar', def: 'La comprobación no terminó a tiempo. No se cuenta como enlace roto: queda pendiente de revisar.' },
+          { term: 'Enlace duplicado', def: 'La misma URL aparece varias veces; se cuenta una sola vez para no inflar los resultados.' },
+          { term: 'Redirección', def: 'La URL responde con un 3xx y lleva a otra dirección.' }
+        ]
+      },
+      {
+        title: 'Errores de JavaScript',
+        items: [
+          { term: 'Error de consola', def: 'Excepción lanzada por la página durante la carga o la interacción.' },
+          { term: 'TypeError', def: 'Se intentó usar un valor de un tipo incorrecto, por ejemplo una función que no existe.' },
+          { term: 'Referencia indefinida', def: 'El código usa una variable o librería que no está cargada.' },
+          { term: 'null inesperado', def: 'Un elemento o propiedad que el script esperaba encontrar no existe.' }
+        ]
+      },
+      {
+        title: 'Ejecución',
+        items: [
+          { term: 'Passed / Failed / Skipped', def: 'Prueba aprobada, fallida u omitida.' },
+          { term: 'Flaky', def: 'Prueba que a veces pasa y a veces falla sin cambios en el código.' },
+          { term: 'Worker / paralelismo', def: 'Cantidad de pruebas que se ejecutan al mismo tiempo.' },
+          { term: 'Reintento', def: 'Repetición automática de una comprobación antes de marcarla como fallida.' },
+          { term: 'Trace', def: 'Grabación paso a paso de una prueba para depurarla.' }
+        ]
+      },
+      {
+        title: 'BDD y datos',
+        items: [
+          { term: 'Feature', def: 'Archivo Gherkin que agrupa los escenarios de una funcionalidad.' },
+          { term: 'Escenario', def: 'Caso de prueba escrito en lenguaje natural.' },
+          { term: 'Step', def: 'Cada línea Given / When / Then de un escenario.' },
+          { term: 'Hook', def: 'Código que se ejecuta antes o después de un escenario.' },
+          { term: 'Escaneo / crawl', def: 'Recorrido automático del sitio que produce el JSON de entrada.' },
+          { term: 'Defecto único', def: 'Fallo agrupado por código y URL, sin contar cada navegador por separado.' }
+        ]
+      }
+    ]
+  },
+  en: {
+    intro: 'CACHAI-QA is a local audit and automated testing framework: it scans a site, generates tests from what it finds and runs them across several browsers, leaving the evidence in HTML reports.',
+    howTitle: 'How it works',
+    howSubtitle: 'The current flow, from start to finish.',
+    steps: [
+      { title: 'Scan', text: 'Playwright walks the URL and stores pages, links, forms and images in a JSON file. You can choose a Quick, Full or Custom scan.' },
+      { title: 'Generation', text: 'TypeScript turns that JSON into Playwright tests (with Page Object Model) and Gherkin scenarios with their Cucumber steps.' },
+      { title: 'Execution', text: 'Playwright runs on Chromium, Chrome and Firefox in parallel; Cucumber uses Chromium by default (configurable). Links are checked over HTTP only once to avoid repeating work per browser.' },
+      { title: 'Results', text: 'HTML reports from both engines, metrics and a list of unique defects are produced. This panel groups everything by URL and error type.' }
+    ],
+    techTitle: 'Technologies',
+    techSubtitle: 'What is used today and what is planned.',
+    tech: [
+      { name: 'Node.js', text: 'Runtime for the framework and the local panel.', current: true },
+      { name: 'TypeScript', text: 'Scan logic, test generation and project typing.', current: true },
+      { name: 'Playwright', text: 'Browser automation and scanning engine.', current: true },
+      { name: 'Gherkin + Cucumber', text: 'Natural-language scenarios and BDD execution.', current: true },
+      { name: 'Page Object Model', text: 'Reusable organization of pages and selectors.', current: true },
+      { name: 'BrowserStack', text: 'Cloud execution and Safari. Planned, not integrated yet.', current: false }
+    ],
+    planned: 'Planned',
+    current: 'In use',
+    glossaryTitle: 'Common error glossary',
+    glossarySubtitle: 'What each term in the panel means.',
+    glossary: [
+      {
+        title: 'Links & network',
+        items: [
+          { term: '404 / 4xx / 5xx', def: 'The server returned an HTTP error. A 404 means the URL does not exist; a 5xx means a server failure.' },
+          { term: 'Timeout / unverified', def: 'The check did not finish in time. It is not counted as a broken link; it stays pending review.' },
+          { term: 'Duplicate link', def: 'The same URL appears several times; it is counted once so results are not inflated.' },
+          { term: 'Redirect', def: 'The URL answers with a 3xx and points to another address.' }
+        ]
+      },
+      {
+        title: 'JavaScript errors',
+        items: [
+          { term: 'Console error', def: 'An exception thrown by the page during load or interaction.' },
+          { term: 'TypeError', def: 'A value was used as the wrong type, for example a function that does not exist.' },
+          { term: 'Undefined reference', def: 'The code uses a variable or library that is not loaded.' },
+          { term: 'Unexpected null', def: 'An element or property the script expected to find does not exist.' }
+        ]
+      },
+      {
+        title: 'Execution',
+        items: [
+          { term: 'Passed / Failed / Skipped', def: 'Test approved, failed or omitted.' },
+          { term: 'Flaky', def: 'A test that sometimes passes and sometimes fails without any code change.' },
+          { term: 'Worker / parallelism', def: 'How many tests run at the same time.' },
+          { term: 'Retry', def: 'Automatic repetition of a check before marking it as failed.' },
+          { term: 'Trace', def: 'Step-by-step recording of a test for debugging.' }
+        ]
+      },
+      {
+        title: 'BDD & data',
+        items: [
+          { term: 'Feature', def: 'Gherkin file that groups the scenarios of a feature.' },
+          { term: 'Scenario', def: 'Test case written in natural language.' },
+          { term: 'Step', def: 'Each Given / When / Then line of a scenario.' },
+          { term: 'Hook', def: 'Code that runs before or after a scenario.' },
+          { term: 'Scan / crawl', def: 'Automatic walk of the site that produces the input JSON.' },
+          { term: 'Unique defect', def: 'Failure grouped by code and URL, without counting each browser separately.' }
+        ]
+      }
+    ]
   }
 };
 
@@ -454,6 +638,7 @@ function applyLang() {
   renderScans();
   renderTests();
   renderRuns();
+  renderAbout();
 }
 
 /* ------------------------------------------------------------------ *
@@ -619,7 +804,14 @@ function renderHomeErrors() {
   const limit = state.homeShowAll ? list.length : Math.min(5, list.length);
   const visible = list.slice(0, limit);
 
-  countEl.textContent = num(list.length);
+  const totalErrors = Number(data && data.counts && data.counts.errors) || list.length;
+  const uniqueEl = $('#home-errors-unique');
+  countEl.textContent = num(totalErrors);
+  if (uniqueEl) {
+    uniqueEl.hidden = list.length === 0 || list.length === totalErrors;
+    uniqueEl.textContent = `${num(list.length)} ${t('home.errors.unique')}`;
+  }
+
   container.innerHTML = visible.map(errorCardHtml).join('');
   if (list.length > visible.length) {
     container.innerHTML += `<button type="button" class="btn" id="home-show-all">${t('home.errors.showAll', { n: num(list.length) })}</button>`;
@@ -654,7 +846,18 @@ function errorCardHtml(error) {
 
   const originPath = shortPath(error.origin);
   const sourceText = error.file ? `${error.file}${error.line ? ':' + error.line : ''}` : '';
-  const summaryText = [sourceText, error.feature || '', error.summary || '', originPath !== '—' ? originPath : '']
+  const browsers = Array.isArray(error.browsers) && error.browsers.length
+    ? error.browsers
+    : (error.browser ? [error.browser] : []);
+  const occurrences = Number(error.occurrences) || 1;
+  const summaryText = [
+    occurrences > 1 ? '×' + occurrences : '',
+    browsers.length ? '[' + browsers.join(', ') + ']' : '',
+    sourceText,
+    error.feature || '',
+    error.summary || '',
+    originPath !== '—' ? originPath : ''
+  ]
     .filter(Boolean)
     .join(' › ');
 
@@ -671,6 +874,8 @@ function errorCardHtml(error) {
           <section>
             <h4>🌐 ${t('error.location')}</h4>
             <p><strong>${t('error.affected')}:</strong> <code>${esc(error.url || '—')}</code></p>
+            ${browsers.length ? `<p><strong>${t('error.browser')}:</strong> <code>${esc(browsers.join(', '))}</code></p>` : ''}
+            ${occurrences > 1 ? `<p><strong>${t('error.occurrences')}:</strong> ${num(occurrences)}</p>` : ''}
             <p><strong>${t('error.origin')}:</strong> <code>${esc(error.origin || '—')}</code></p>
             ${error.feature ? `<p><strong>${t('error.feature')}:</strong> ${esc(error.feature)}</p>` : ''}
             ${error.step ? `<p><strong>${t('error.failedStep')}:</strong> <code>${esc(error.stepKeyword)} ${esc(error.step)}</code></p>` : ''}
@@ -694,7 +899,7 @@ function errorCardHtml(error) {
     </article>`;
 }
 
-function renderErrorCards(errors, container, empty, countEl, limit) {
+function renderErrorCards(errors, container, empty, countEl, limit, totalCount) {
   if (!container) return;
   const list = Array.isArray(errors) ? errors : [];
   const visible = limit ? list.slice(0, limit) : list;
@@ -703,7 +908,7 @@ function renderErrorCards(errors, container, empty, countEl, limit) {
     container.innerHTML += `<button type="button" class="btn" data-error-detail>${t('home.errors.showAll', { n: num(list.length) })}</button>`;
   }
   if (empty) empty.hidden = list.length > 0;
-  if (countEl) countEl.textContent = num(list.length);
+  if (countEl) countEl.textContent = num(totalCount != null ? totalCount : list.length);
 }
 
 function openOverviewDetail() {
@@ -724,8 +929,16 @@ async function loadScans() {
     const json = await res.json();
     state.scans = json.scans || [];
 
+    // Depura favoritos de archivos que ya no existen.
+    const valid = new Set(state.scans.map((scan) => scan.file));
+    const favorites = state.scanFavorites.filter((file) => valid.has(file));
+    if (favorites.length !== state.scanFavorites.length) {
+      state.scanFavorites = favorites;
+      localStorage.setItem('cq.scanFavorites', JSON.stringify(state.scanFavorites));
+    }
+
     // Si la categoría activa quedó vacía, abrir la del escaneo más reciente.
-    if (state.scans.length > 0) {
+    if (state.scans.length > 0 && state.scanFilter !== 'favorites') {
       const currentCount = state.scans.filter((scan) => (scan.scanType || 'custom') === state.scanFilter).length;
       if (currentCount === 0) state.scanFilter = state.scans[0].scanType || 'custom';
     }
@@ -760,21 +973,33 @@ function renderScans() {
     const count = scans.filter((scan) => (scan.scanType || 'custom') === type).length;
     $$(`[data-scan-count="${type}"]`).forEach((el) => { el.textContent = num(count); });
   }
+  const favoriteCount = scans.filter((scan) => state.scanFavorites.includes(scan.file)).length;
+  $$('[data-scan-count="favorites"]').forEach((el) => { el.textContent = num(favoriteCount); });
 
   $$('[data-scan-filter]').forEach((button) => {
     button.classList.toggle('active', button.dataset.scanFilter === state.scanFilter);
   });
 
-  const filtered = scans.filter((scan) => (scan.scanType || 'custom') === state.scanFilter);
+  const filtered = state.scanFilter === 'favorites'
+    ? scans.filter((scan) => state.scanFavorites.includes(scan.file))
+    : scans.filter((scan) => (scan.scanType || 'custom') === state.scanFilter);
   if (filtered.length === 0) {
     list.innerHTML = '';
     empty.hidden = false;
-    empty.textContent = t('scans.empty');
+    empty.textContent = state.scanFilter === 'favorites' ? t('scans.emptyFavorites') : t('scans.empty');
     return;
   }
   empty.hidden = true;
 
-  list.innerHTML = filtered.map((scan) => {
+  const groups = [
+    { kind: 'crawl', label: t('scans.group.crawl') },
+    { kind: 'framework', label: t('scans.group.framework') },
+    { kind: 'unknown', label: t('scans.group.unknown') }
+  ];
+
+  const cardFor = (scan) => {
+    const kind = scan.kind || 'unknown';
+    const favorite = state.scanFavorites.includes(scan.file);
     const meta = [];
     meta.push(`<span class="badge">${esc(scanTypeLabel(scan.scanType))}</span>`);
     meta.push(`<span class="badge">${esc(kindLabel(scan.kind))}</span>`);
@@ -786,19 +1011,40 @@ function renderScans() {
     meta.push(`<span class="badge">${esc(fmtDate(scan.mtime))}</span>`);
 
     return `
-      <article class="scan">
+      <article class="scan scan--${esc(kind)}${favorite ? ' scan--favorite' : ''}">
+        <span class="scan-accent" aria-hidden="true"></span>
         <div class="scan-top">
           <div>
             <h3 class="scan-name">${esc(scan.name)}</h3>
             <div class="scan-url">${esc(scan.url || '—')}</div>
           </div>
           <div class="scan-actions">
+            <button type="button" class="btn favorite-btn${favorite ? ' active' : ''}" data-favorite="${esc(scan.file)}"
+              aria-pressed="${favorite ? 'true' : 'false'}"
+              title="${esc(favorite ? t('scans.favorite.remove') : t('scans.favorite.add'))}"
+              aria-label="${esc(favorite ? t('scans.favorite.remove') : t('scans.favorite.add'))}">
+              <span aria-hidden="true">${favorite ? '★' : '☆'}</span>
+            </button>
             <button type="button" class="btn" data-view="${esc(scan.file)}">${t('common.view')}</button>
             <button type="button" class="btn danger" data-delete="${esc(scan.file)}">${t('common.delete')}</button>
           </div>
         </div>
         <div class="scan-meta">${meta.join('')}</div>
       </article>`;
+  };
+
+  list.innerHTML = groups.map((group) => {
+    const items = filtered.filter((scan) => (scan.kind || 'unknown') === group.kind);
+    if (items.length === 0) return '';
+    return `
+      <div class="scan-group" role="group" aria-label="${esc(group.label)}">
+        <div class="scan-group-head scan-group-head--${esc(group.kind)}">
+          <span class="scan-group-dot" aria-hidden="true"></span>
+          <span>${esc(group.label)}</span>
+          <span class="badge">${num(items.length)}</span>
+        </div>
+        ${items.map(cardFor).join('')}
+      </div>`;
   }).join('');
 }
 
@@ -853,18 +1099,36 @@ function renderScanDetail(file, data) {
   openModal(file, summaryHtml + table);
 }
 
+function toggleFavorite(file) {
+  const index = state.scanFavorites.indexOf(file);
+  if (index >= 0) state.scanFavorites.splice(index, 1);
+  else state.scanFavorites.push(file);
+  localStorage.setItem('cq.scanFavorites', JSON.stringify(state.scanFavorites));
+  renderScans();
+}
+
 async function deleteScan(file) {
   const scan = state.scans.find((item) => item.file === file);
-  const message = t('scans.deleteConfirm', { name: scan ? scan.name : file });
+  const linked = (state.runs || []).some((run) => run.summaryFile === file)
+    || Boolean(scan && scan.kind === 'crawl'
+      && (state.scans || []).some((item) => item.kind === 'framework' && item.scanSource === file));
+  const message = t(linked ? 'scans.deleteConfirmRuns' : 'scans.deleteConfirm', {
+    name: scan ? scan.name : file
+  });
   const ok = await confirmAction(message);
   if (!ok) return;
   try {
     const res = await fetch('/api/scan?file=' + encodeURIComponent(file), { method: 'DELETE' });
     const json = await res.json();
     if (json.error) { toast(json.error, true); return; }
+
+    if (state.scanFavorites.includes(file)) {
+      state.scanFavorites = state.scanFavorites.filter((item) => item !== file);
+      localStorage.setItem('cq.scanFavorites', JSON.stringify(state.scanFavorites));
+    }
+
     toast(t('toast.deleted'));
-    loadScans();
-    loadOverview();
+    await Promise.all([loadScans(), loadOverview(), loadRuns(), loadTests()]);
   } catch {
     toast(t('toast.error'), true);
   }
@@ -883,11 +1147,114 @@ async function loadTests() {
   }
 }
 
+function activeRun(kind) {
+  if (state.selectedRun[kind]) {
+    return state.runDetail[kind] || { available: false, loading: state.runDetailLoading[kind] };
+  }
+  return state.overview ? state.overview[kind] : null;
+}
+
+function runOrdinal(kind, reportPath) {
+  const runs = (state.runs || []).filter((run) => run.type === kind);
+  const target = runs.find((run) => run.reportPath === reportPath);
+  if (!target) return 0;
+  const key = runGroupKey(target);
+  const group = runs
+    .filter((run) => runGroupKey(run) === key)
+    .sort((a, b) => runTimestamp(a) - runTimestamp(b));
+  return group.findIndex((run) => run.reportPath === reportPath) + 1;
+}
+
+function renderRunBanner(kind) {
+  const banner = $(`#${kind}-run-banner`);
+  if (!banner) return;
+
+  const selected = state.selectedRun[kind];
+  if (!selected) {
+    banner.hidden = true;
+    banner.innerHTML = '';
+    return;
+  }
+
+  const run = (state.runs || []).find((item) => item.reportPath === selected);
+  const numberKey = kind === 'cucumber' ? 'runs.reportNumber' : 'runs.executionNumber';
+  const ordinal = runOrdinal(kind, selected);
+  const name = ordinal ? t(numberKey, { n: ordinal }) : '';
+  const date = run ? fmtDateShort(runTimestamp(run)) : '';
+
+  banner.hidden = false;
+  banner.innerHTML = `
+    <span class="run-banner-text">${state.runDetailLoading[kind]
+      ? esc(t('runs.selectedLoading'))
+      : esc(t('runs.selected', { name, date }))}</span>
+    <button type="button" class="btn" data-run-latest="${esc(kind)}">${t('runs.backToLatest')}</button>`;
+}
+
+async function selectRun(kind, reportPath) {
+  if (!reportPath) return;
+  state.selectedRun[kind] = reportPath;
+  state.runDetail[kind] = null;
+  state.runDetailLoading[kind] = true;
+  renderTests();
+  renderRuns();
+
+  try {
+    const res = await fetch('/api/run?path=' + encodeURIComponent(reportPath));
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    if (state.selectedRun[kind] !== reportPath) return;
+    state.runDetail[kind] = json;
+  } catch {
+    if (state.selectedRun[kind] === reportPath) toast(t('runs.selectedError'), true);
+  } finally {
+    if (state.selectedRun[kind] === reportPath) {
+      state.runDetailLoading[kind] = false;
+      renderTests();
+      renderRuns();
+    }
+  }
+}
+
+function clearSelectedRun(kind) {
+  state.selectedRun[kind] = null;
+  state.runDetail[kind] = null;
+  state.runDetailLoading[kind] = false;
+  renderTests();
+  renderRuns();
+}
+
+async function deleteRun(kind, reportPath) {
+  const run = (state.runs || []).find((item) => item.reportPath === reportPath);
+  const ok = await confirmAction(t('runs.deleteConfirm', { date: run ? fmtDate(runTimestamp(run)) : '' }));
+  if (!ok) return;
+
+  try {
+    const res = await fetch('/api/run?path=' + encodeURIComponent(reportPath), { method: 'DELETE' });
+    const json = await res.json();
+    if (json.error) { toast(json.error, true); return; }
+
+    if (state.selectedRun[kind] === reportPath) {
+      state.selectedRun[kind] = null;
+      state.runDetail[kind] = null;
+      state.runDetailLoading[kind] = false;
+    }
+    toast(t('toast.runDeleted'));
+    await Promise.all([loadOverview(), loadRuns(), loadTests(), loadScans()]);
+  } catch {
+    toast(t('toast.error'), true);
+  }
+}
+
 function renderTests() {
   const tests = state.tests;
   const spec = tests ? tests.spec : null;
-  const bddMetrics = tests ? tests.bddMetrics : null;
-  const cucumber = tests ? tests.cucumber : null;
+  const selectedCucumber = state.selectedRun.cucumber ? state.runDetail.cucumber : null;
+  const bddMetrics = selectedCucumber && selectedCucumber.totals
+    ? selectedCucumber.totals
+    : (tests ? tests.bddMetrics : null);
+  const cucumber = selectedCucumber && Array.isArray(selectedCucumber.features)
+    ? selectedCucumber
+    : (tests ? tests.cucumber : null);
 
   const specPath = $('#tests-spec-path');
   if (specPath) specPath.textContent = spec && spec.exists ? spec.path : '';
@@ -895,9 +1262,9 @@ function renderTests() {
   const testsEmpty = $('#tests-empty');
   if (testsEmpty) testsEmpty.hidden = Boolean(spec && spec.exists);
 
+  const specTests = spec && Array.isArray(spec.tests) ? spec.tests : [];
   const cases = $('#tests-cases');
   if (cases) {
-    const specTests = spec && Array.isArray(spec.tests) ? spec.tests : [];
     const limit = 20;
     cases.innerHTML = specTests.slice(0, limit).map((name) => `<li>${esc(name)}</li>`).join('');
     if (specTests.length > limit) {
@@ -905,8 +1272,12 @@ function renderTests() {
     }
   }
 
-  const runButton = $('#run-tests');
-  if (runButton) runButton.disabled = !spec || !spec.exists || !spec.hasConfig;
+  const specCount = $('#tests-spec-count');
+  if (specCount) {
+    specCount.textContent = spec && spec.exists && specTests.length
+      ? t('tests.specCount', { n: specTests.length })
+      : '';
+  }
 
   const bddSummary = $('#bdd-metrics-summary');
   if (bddSummary) {
@@ -924,6 +1295,29 @@ function renderTests() {
     } else {
       bddSummary.textContent = t('runs.cucumber.noMetrics');
     }
+  }
+
+  const bddBadge = $('#bdd-status-badge');
+  if (bddBadge) {
+    const features = Number(bddMetrics && bddMetrics.totalFeatures)
+      || (cucumber && Array.isArray(cucumber.features) ? cucumber.features.length : 0);
+    const scenarios = Number(bddMetrics && bddMetrics.totalScenarios)
+      || (cucumber && Array.isArray(cucumber.features)
+        ? cucumber.features.reduce((sum, feature) => sum + (feature.scenarios || []).length, 0)
+        : 0);
+    const steps = Number(bddMetrics && bddMetrics.totalSteps)
+      || (cucumber && Array.isArray(cucumber.features)
+        ? cucumber.features.reduce(
+          (sum, feature) => sum + (feature.scenarios || []).reduce(
+            (inner, scenario) => inner + (scenario.steps || []).length,
+            0
+          ),
+          0
+        )
+        : 0);
+    bddBadge.textContent = features || scenarios || steps
+      ? t('runs.bdd.summary', { features, scenarios, steps })
+      : 'BDD';
   }
 
   const bddFeatures = $('#cucumber-features');
@@ -965,8 +1359,10 @@ function renderTests() {
     }
   }
 
-  const overview = state.overview;
-  const playwright = overview && overview.playwright;
+  renderRunBanner('playwright');
+  renderRunBanner('cucumber');
+
+  const playwright = activeRun('playwright');
   const playwrightAvailable = Boolean(playwright && playwright.available);
   const setMetric = (selector, value, available) => {
     const el = $(selector);
@@ -985,17 +1381,6 @@ function renderTests() {
       : '';
   }
 
-  const playwrightTrace = $('#playwright-trace-btn');
-  if (playwrightTrace) {
-    if (playwrightAvailable && playwright.reportPath) {
-      playwrightTrace.hidden = false;
-      playwrightTrace.dataset.runPreview = playwright.reportPath;
-    } else {
-      playwrightTrace.hidden = true;
-      delete playwrightTrace.dataset.runPreview;
-    }
-  }
-
   const playwrightReport = $('#playwright-current-report');
   if (playwrightReport) {
     if (playwrightAvailable && playwright.reportPath) {
@@ -1012,10 +1397,11 @@ function renderTests() {
     $('#playwright-errors'),
     $('#playwright-errors-empty'),
     $('#playwright-errors-count'),
-    10
+    10,
+    playwrightAvailable ? playwright.errors : 0
   );
 
-  const cucumberExecution = overview && overview.cucumber;
+  const cucumberExecution = activeRun('cucumber');
   const cucumberAvailable = Boolean(cucumberExecution && cucumberExecution.available);
   setMetric('#cucumber-metric-total', cucumberExecution && cucumberExecution.total, cucumberAvailable);
   setMetric('#cucumber-metric-passed', cucumberExecution && cucumberExecution.successes, cucumberAvailable);
@@ -1045,63 +1431,9 @@ function renderTests() {
     $('#cucumber-errors'),
     $('#cucumber-errors-empty'),
     $('#cucumber-errors-count'),
-    10
+    10,
+    cucumberExecution && cucumberExecution.available ? cucumberExecution.errors : 0
   );
-}
-
-async function runTests() {
-  const button = $('#run-tests');
-  const card = $('#tests-output-card');
-  const output = $('#tests-output');
-  const status = $('#tests-status');
-
-  button.disabled = true;
-  button.textContent = t('tests.running');
-  card.hidden = false;
-  output.textContent = '';
-  status.className = 'badge run';
-  status.textContent = t('tests.status.running');
-
-  try {
-    const res = await fetch('/api/tests/run', { method: 'POST' });
-    const json = await res.json();
-    pollJob(json.id);
-  } catch {
-    toast(t('toast.error'), true);
-    button.disabled = false;
-    button.textContent = t('tests.run');
-  }
-}
-
-function pollJob(id) {
-  clearInterval(state.jobTimer);
-  state.jobTimer = setInterval(async () => {
-    try {
-      const res = await fetch('/api/tests/run/' + encodeURIComponent(id));
-      const job = await res.json();
-      const output = $('#tests-output');
-      output.textContent = job.output || '';
-      output.scrollTop = output.scrollHeight;
-
-      const status = $('#tests-status');
-      if (job.status === 'running') {
-        status.className = 'badge run';
-        status.textContent = t('tests.status.running');
-      } else {
-        clearInterval(state.jobTimer);
-        status.className = 'badge ' + (job.status === 'done' ? 'ok' : 'fail');
-        status.textContent = t('tests.status.' + job.status);
-        const button = $('#run-tests');
-        button.disabled = false;
-        button.textContent = t('tests.run');
-        loadTests();
-        loadOverview();
-        loadRuns();
-      }
-    } catch {
-      clearInterval(state.jobTimer);
-    }
-  }, 1200);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1120,6 +1452,18 @@ async function loadRuns() {
 
 function renderRuns() {
   const runs = state.runs || [];
+
+  // Si la ejecución seleccionada ya no existe (por ejemplo, se eliminó su
+  // escaneo), se vuelve automáticamente a la última ejecución.
+  for (const kind of ['playwright', 'cucumber']) {
+    const selected = state.selectedRun[kind];
+    if (selected && !runs.some((run) => run.type === kind && run.reportPath === selected)) {
+      state.selectedRun[kind] = null;
+      state.runDetail[kind] = null;
+      state.runDetailLoading[kind] = false;
+    }
+  }
+
   const count = $('#runs-count');
   if (count) count.textContent = num(runs.length);
 
@@ -1133,19 +1477,14 @@ function renderRuns() {
   const overview = state.overview || {};
   const playwrightExecution = overview.playwright && overview.playwright.available ? overview.playwright : null;
   const cucumberExecution = overview.cucumber && overview.cucumber.available ? overview.cucumber : null;
-  const currentPlaywright = playwrightExecution ? playwrightExecution.reportPath : null;
-  const currentCucumber = cucumberExecution ? cucumberExecution.reportPath : null;
 
-  const playwrightRuns = withCurrentStats(
-    runs.filter((run) => run.type === 'playwright'),
-    currentPlaywright,
-    playwrightExecution
-  );
-  const cucumberRuns = withCurrentStats(
-    runs.filter((run) => run.type === 'cucumber'),
-    currentCucumber,
-    cucumberExecution
-  );
+  const allPlaywrightRuns = runs.filter((run) => run.type === 'playwright');
+  const allCucumberRuns = runs.filter((run) => run.type === 'cucumber');
+  const currentPlaywright = resolveCurrentPath(allPlaywrightRuns, playwrightExecution);
+  const currentCucumber = resolveCurrentPath(allCucumberRuns, cucumberExecution);
+
+  const playwrightRuns = withCurrentStats(allPlaywrightRuns, currentPlaywright, playwrightExecution);
+  const cucumberRuns = withCurrentStats(allCucumberRuns, currentCucumber, cucumberExecution);
 
   renderHistoryList(
     playwrightRuns,
@@ -1165,6 +1504,26 @@ function renderRuns() {
   );
 }
 
+function resolveCurrentPath(runs, execution) {
+  if (!execution) return null;
+  const exact = runs.find((run) => run.reportPath === execution.reportPath);
+  if (exact) return exact.reportPath;
+
+  if (execution.timestamp) {
+    const close = runs.find((run) => Math.abs(run.mtime - execution.timestamp) < 5000);
+    if (close) return close.reportPath;
+  }
+
+  // El overview de Cucumber apunta al reporte estático; se usa la copia
+  // fechada más reciente para poder marcarla como ejecución actual.
+  if (/\/cucumber-report\.html$/i.test(execution.reportPath || '')) {
+    const latest = [...runs].sort((a, b) => runTimestamp(b) - runTimestamp(a))[0];
+    if (latest) return latest.reportPath;
+  }
+
+  return execution.reportPath || null;
+}
+
 function withCurrentStats(runs, currentPath, execution) {
   if (!currentPath || !execution) return runs;
   return runs.map((run) => {
@@ -1179,27 +1538,75 @@ function withCurrentStats(runs, currentPath, execution) {
   });
 }
 
+function runGroupKey(run) {
+  const raw = String((run && run.url) || '').trim();
+  if (!raw) return 'sin-url';
+  try {
+    const parsed = new URL(raw);
+    return parsed.host || 'sin-url';
+  } catch {
+    const fallback = raw.replace(/^https?:\/\//i, '').split('/')[0].trim();
+    return fallback || 'sin-url';
+  }
+}
+
+function groupCountLabel(kind, total) {
+  if (kind === 'cucumber') {
+    return total === 1 ? t('runs.group.countCucumberOne') : t('runs.group.countCucumber', { n: total });
+  }
+  return total === 1 ? t('runs.group.countOne') : t('runs.group.count', { n: total });
+}
+
+function runCounts(run) {
+  const hasCounts = run.passed != null || run.failed != null;
+  if (!hasCounts) return t('runs.noCounts');
+  return `${num(run.passed ?? 0)} OK / ${num(run.failed ?? 0)} Fail`;
+}
+
+function runTimestamp(run) {
+  const parsed = run && run.startedAt ? Date.parse(run.startedAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : ((run && run.mtime) || 0);
+}
+
+function buildRunGroups(runs, currentPath, kind) {
+  const map = new Map();
+  for (const run of runs) {
+    const key = runGroupKey(run);
+    if (!map.has(key)) map.set(key, { key, runs: [] });
+    map.get(key).runs.push(run);
+  }
+
+  const groups = [];
+  for (const group of map.values()) {
+    group.runs.sort((a, b) => runTimestamp(b) - runTimestamp(a));
+    const chronological = [...group.runs].sort((a, b) => runTimestamp(a) - runTimestamp(b));
+    const ordinals = new Map();
+    chronological.forEach((run, index) => ordinals.set(run, index + 1));
+    group.runs = group.runs.map((run) => ({ ...run, ordinal: ordinals.get(run) }));
+    group.count = group.runs.length;
+    group.latest = group.runs[0];
+    group.current = Boolean(currentPath && group.runs.some((run) => run.reportPath === currentPath));
+    groups.push(group);
+  }
+
+  groups.sort((a, b) => {
+    if (a.current !== b.current) return a.current ? -1 : 1;
+    return runTimestamp(b.latest) - runTimestamp(a.latest);
+  });
+  return groups;
+}
+
 function renderHistoryList(runs, currentPath, listSelector, emptySelector, countSelector, kind) {
   const list = $(listSelector);
   if (!list) return;
 
-  const search = String(state.runSearch[kind] || '').trim().toLowerCase();
-  const status = kind === 'playwright' ? state.runStatus.playwright : 'all';
-  const filtered = runs.filter((run) => {
-    if (search) {
-      const haystack = `${run.id} ${run.url || ''} ${fmtDateShort(run.mtime)} ${run.passed ?? ''} ${run.failed ?? ''}`.toLowerCase();
-      if (!haystack.includes(search)) return false;
-    }
-    if (status === 'failed' && !(Number(run.failed) > 0)) return false;
-    if (status === 'passed' && !(run.failed === 0 && run.passed != null)) return false;
-    return true;
-  });
-
+  const groups = buildRunGroups(runs, currentPath, kind);
   const countEl = $(countSelector);
-  if (countEl) countEl.textContent = num(filtered.length);
+  if (countEl) countEl.textContent = num(runs.length);
 
-  if (filtered.length === 0) {
+  if (groups.length === 0) {
     list.innerHTML = '';
+    state.activeRunGroup[kind] = null;
     const empty = $(emptySelector);
     if (empty) empty.hidden = false;
     return;
@@ -1207,33 +1614,77 @@ function renderHistoryList(runs, currentPath, listSelector, emptySelector, count
   const empty = $(emptySelector);
   if (empty) empty.hidden = true;
 
-  list.innerHTML = filtered.map((run) => historyItemHtml(run, currentPath, kind)).join('');
+  const activeKey = (() => {
+    const selectedPath = state.selectedRun[kind];
+    if (selectedPath) {
+      const selectedGroup = groups.find((group) => group.runs.some((run) => run.reportPath === selectedPath));
+      if (selectedGroup) return selectedGroup.key;
+    }
+    return (groups.find((group) => group.current) || groups[0]).key;
+  })();
+  if (state.activeRunGroup[kind] !== activeKey) {
+    state.activeRunGroup[kind] = activeKey;
+    state.expandedRunGroups[kind][activeKey] = true;
+  } else if (state.selectedRun[kind]) {
+    state.expandedRunGroups[kind][activeKey] = true;
+  }
+
+  list.innerHTML = groups.map((group) => runGroupHtml(group, currentPath, kind)).join('');
+
+  list.querySelectorAll('details.url-group').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      const key = details.dataset.groupKey;
+      if (!key) return;
+      state.expandedRunGroups[kind][key] = details.open;
+    });
+  });
 }
 
-function historyItemHtml(run, currentPath, kind) {
-  const active = Boolean(currentPath && run.reportPath === currentPath);
-  const hasCounts = run.passed != null || run.failed != null;
-  const dotClass = active ? 'ok' : 'run';
-  const title = active
-    ? t(kind === 'playwright' ? 'runs.latestExecution' : 'runs.latestReport')
-    : fmtDateShort(run.mtime);
-  const counts = hasCounts
-    ? `${num(run.passed ?? 0)} OK / ${num(run.failed ?? 0)} Fail`
-    : t('runs.noCounts');
+function runGroupHtml(group, currentPath, kind) {
+  const open = Boolean(state.expandedRunGroups[kind] && state.expandedRunGroups[kind][group.key]);
+  const label = group.key === 'sin-url' ? t('runs.group.noUrl') : group.key;
+  const latest = group.latest;
+  const dotClass = latest.failed == null ? 'run' : (Number(latest.failed) > 0 ? 'fail' : 'ok');
+  const latestCounts = runCounts(latest);
+  const activeBadge = group.current ? ` <span class="badge ok">${t('runs.current')}</span>` : '';
 
   return `
-    <button type="button" class="history-item${active ? ' active' : ''}" data-run-preview="${esc(run.reportPath)}">
-      <span class="history-dot ${dotClass}" aria-hidden="true"></span>
-      <span class="history-main">
-        <span class="history-title">${esc(title)}${active ? ` <span class="badge ok">${t('runs.current')}</span>` : ''}</span>
-        ${active ? `<span class="history-date">${esc(fmtDateShort(run.mtime))}</span>` : ''}
-        <span class="history-meta">${esc(counts)}${run.pages != null ? ` · ${esc(run.pages)} pág.` : ''}</span>
-      </span>
-    </button>`;
+    <details class="url-group" data-group-key="${esc(group.key)}"${open ? ' open' : ''}>
+      <summary class="url-group-head">
+        <span class="url-group-dot ${dotClass}" aria-hidden="true"></span>
+        <span class="url-group-main">
+          <span class="url-group-name">${esc(label)}${activeBadge}</span>
+          <span class="url-group-meta">${esc(groupCountLabel(kind, group.count))} · ${esc(latestCounts)}</span>
+        </span>
+        <span class="url-group-chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="url-group-runs">
+        ${group.runs.map((run) => runItemHtml(run, currentPath, kind)).join('')}
+      </div>
+    </details>`;
 }
 
-function openRunPreview(reportPath) {
-  openModal(t('runs.open'), `<iframe class="report-frame" src="${esc(reportPath)}" title="report"></iframe>`, true);
+function runItemHtml(run, currentPath, kind) {
+  const selected = state.selectedRun[kind] === run.reportPath;
+  const current = Boolean(currentPath && run.reportPath === currentPath);
+  const active = selected || (!state.selectedRun[kind] && current);
+  const numberKey = kind === 'cucumber' ? 'runs.reportNumber' : 'runs.executionNumber';
+  const title = t(numberKey, { n: run.ordinal });
+  const counts = runCounts(run);
+  const pages = run.pages != null ? ` · ${esc(run.pages)} ${t('runs.pagesShort')}` : '';
+
+  return `
+    <div class="history-item${active ? ' active' : ''}">
+      <button type="button" class="history-select" data-run-select="${esc(run.reportPath)}">
+        <span class="history-main">
+          <span class="history-title">${esc(title)}${current ? ` <span class="badge ok">${t('runs.current')}</span>` : ''}</span>
+          <span class="history-date">${esc(fmtDateShort(runTimestamp(run)))}</span>
+          <span class="history-meta">${esc(counts)}${pages}</span>
+        </span>
+      </button>
+      <button type="button" class="history-delete" data-run-delete="${esc(run.reportPath)}"
+        title="${esc(t('runs.delete'))}" aria-label="${esc(t('runs.delete'))}">✕</button>
+    </div>`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1295,6 +1746,88 @@ function closeConfirm(result) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Acerca de / Glosario
+ * ------------------------------------------------------------------ */
+function renderAbout() {
+  const container = $('#about-content');
+  if (!container) return;
+  const data = ABOUT[state.lang] || ABOUT.es;
+
+  $$('[data-about-tab]').forEach((button) => {
+    const active = button.dataset.aboutTab === state.aboutTab;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+
+  if (state.aboutTab === 'glossary') {
+    container.innerHTML = `
+      <div class="card about-card">
+        <div class="about-head">
+          <h3>${esc(data.glossaryTitle)}</h3>
+          <p class="muted">${esc(data.glossarySubtitle)}</p>
+        </div>
+        <div class="glossary-grid">
+          ${data.glossary.map((group) => `
+            <section class="glossary-group" aria-label="${esc(group.title)}">
+              <h4>${esc(group.title)}</h4>
+              ${group.items.map((item) => `
+                <details class="glossary-item">
+                  <summary>
+                    <span class="glossary-term">${esc(item.term)}</span>
+                    <span class="glossary-chevron" aria-hidden="true">▾</span>
+                  </summary>
+                  <p>${esc(item.def)}</p>
+                </details>`).join('')}
+            </section>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="card about-card about-intro">
+      <p>${esc(data.intro)}</p>
+    </div>
+    <div class="card about-card">
+      <div class="about-head">
+        <h3>${esc(data.howTitle)}</h3>
+        <p class="muted">${esc(data.howSubtitle)}</p>
+      </div>
+      <ol class="about-steps">
+        ${data.steps.map((step, index) => `
+          <li class="about-step">
+            <span class="about-step-number" aria-hidden="true">${index + 1}</span>
+            <div>
+              <strong>${esc(step.title)}</strong>
+              <p>${esc(step.text)}</p>
+            </div>
+          </li>`).join('')}
+      </ol>
+    </div>
+    <div class="card about-card">
+      <div class="about-head">
+        <h3>${esc(data.techTitle)}</h3>
+        <p class="muted">${esc(data.techSubtitle)}</p>
+      </div>
+      <div class="tech-grid">
+        ${data.tech.map((tech) => `
+          <article class="tech-card">
+            <div class="tech-card-head">
+              <strong>${esc(tech.name)}</strong>
+              <span class="badge ${tech.current ? 'ok' : ''}">${esc(tech.current ? data.current : data.planned)}</span>
+            </div>
+            <p class="muted">${esc(tech.text)}</p>
+          </article>`).join('')}
+      </div>
+    </div>`;
+}
+
+function setAboutTab(name) {
+  state.aboutTab = name === 'glossary' ? 'glossary' : 'how';
+  renderAbout();
+}
+
+/* ------------------------------------------------------------------ *
  * Pestañas y filtros
  * ------------------------------------------------------------------ */
 function setTab(name) {
@@ -1306,6 +1839,7 @@ function setTab(name) {
   $$('.panel').forEach((panel) => panel.classList.toggle('active', panel.id === 'panel-' + name));
   if (name === 'home') loadOverview();
   if (name === 'scans') loadScans();
+  if (name === 'about') renderAbout();
   if (name === 'runs') {
     loadTests();
     loadRuns();
@@ -1342,6 +1876,7 @@ function bind() {
   $$('.tab').forEach((button) => button.addEventListener('click', () => setTab(button.dataset.tab)));
   $$('[data-scan-filter]').forEach((button) => button.addEventListener('click', () => setScanFilter(button.dataset.scanFilter)));
   $$('[data-run-filter]').forEach((button) => button.addEventListener('click', () => setRunFilter(button.dataset.runFilter)));
+  $$('[data-about-tab]').forEach((button) => button.addEventListener('click', () => setAboutTab(button.dataset.aboutTab)));
 
   $('#refresh').addEventListener('click', async () => {
     await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns()]);
@@ -1349,8 +1884,10 @@ function bind() {
   });
 
   $('#scans-list').addEventListener('click', (event) => {
+    const favorite = event.target.closest('[data-favorite]');
     const view = event.target.closest('[data-view]');
     const del = event.target.closest('[data-delete]');
+    if (favorite) toggleFavorite(favorite.dataset.favorite);
     if (view) openScan(view.dataset.view);
     if (del) deleteScan(del.dataset.delete);
   });
@@ -1358,44 +1895,18 @@ function bind() {
   ['#runs-list-playwright', '#runs-list-cucumber'].forEach((selector) => {
     const list = $(selector);
     if (!list) return;
+    const kind = selector.includes('playwright') ? 'playwright' : 'cucumber';
     list.addEventListener('click', (event) => {
-      const preview = event.target.closest('[data-run-preview]');
-      if (preview) openRunPreview(preview.dataset.runPreview);
+      const remove = event.target.closest('[data-run-delete]');
+      if (remove) {
+        deleteRun(kind, remove.dataset.runDelete);
+        return;
+      }
+      const item = event.target.closest('[data-run-select]');
+      if (item) selectRun(kind, item.dataset.runSelect);
     });
   });
 
-  const playwrightSearch = $('#runs-search-playwright');
-  if (playwrightSearch) {
-    playwrightSearch.addEventListener('input', () => {
-      state.runSearch.playwright = playwrightSearch.value;
-      renderRuns();
-    });
-  }
-
-  const cucumberSearch = $('#runs-search-cucumber');
-  if (cucumberSearch) {
-    cucumberSearch.addEventListener('input', () => {
-      state.runSearch.cucumber = cucumberSearch.value;
-      renderRuns();
-    });
-  }
-
-  const playwrightStatus = $('#runs-status-playwright');
-  if (playwrightStatus) {
-    playwrightStatus.addEventListener('change', () => {
-      state.runStatus.playwright = playwrightStatus.value;
-      renderRuns();
-    });
-  }
-
-  const playwrightTrace = $('#playwright-trace-btn');
-  if (playwrightTrace) {
-    playwrightTrace.addEventListener('click', () => {
-      if (playwrightTrace.dataset.runPreview) openRunPreview(playwrightTrace.dataset.runPreview);
-    });
-  }
-
-  $('#run-tests').addEventListener('click', runTests);
   $('#home-detail-btn').addEventListener('click', openOverviewDetail);
 
   const donut = $('#home-donut');
@@ -1435,6 +1946,8 @@ function bind() {
   document.addEventListener('click', (event) => {
     const copy = event.target.closest('[data-copy]');
     if (copy) copyText(copy.dataset.copy);
+    const latest = event.target.closest('[data-run-latest]');
+    if (latest) clearSelectedRun(latest.dataset.runLatest);
     if (event.target.closest('#home-show-all')) {
       state.homeShowAll = true;
       renderHomeErrors();

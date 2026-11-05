@@ -99,7 +99,22 @@ function main() {
     return;
   }
 
-  const features = readJson(JSON_REPORT);
+  const stats = fs.statSync(JSON_REPORT);
+  if (!stats.size || stats.size <= 2) {
+    console.log('[BDD] Cucumber no generó resultados válidos (reporte vacío o interrumpido).');
+    console.log('[BDD] No se actualizó el historial para evitar guardar una ejecución incompleta.');
+    return;
+  }
+
+  let features;
+  try {
+    features = readJson(JSON_REPORT);
+  } catch (error) {
+    console.log('[BDD] No se pudo leer el reporte JSON de Cucumber: ' + error.message);
+    console.log('[BDD] No se actualizó el historial para evitar guardar una ejecución incompleta.');
+    return;
+  }
+
   if (!Array.isArray(features)) {
     console.log('[BDD] El reporte de Cucumber no tiene el formato esperado.');
     return;

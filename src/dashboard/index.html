@@ -35,9 +35,13 @@
     </div>
 
     <nav class="tabs" role="tablist" aria-label="Navegación principal">
-      <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="home"><span data-i18n="tabs.home">Inicio</span></button>
-      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="scans"><span data-i18n="tabs.scans">Escaneos</span></button>
-      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="runs"><span data-i18n="tabs.runs">Ejecuciones</span></button>
+      <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="home" id="tab-home" aria-controls="panel-home"><span data-i18n="tabs.home">Inicio</span></button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="scans" id="tab-scans" aria-controls="panel-scans"><span data-i18n="tabs.scans">Escaneos</span></button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="runs" id="tab-runs" aria-controls="panel-runs"><span data-i18n="tabs.runs">Ejecuciones</span></button>
+      <button type="button" class="tab tab--info" role="tab" aria-selected="false" data-tab="about" id="tab-about" aria-controls="panel-about">
+        <span class="tab-icon" aria-hidden="true">ℹ️</span>
+        <span data-i18n="tabs.about">¿Qué es CACHAI-QA?</span>
+      </button>
     </nav>
   </header>
 
@@ -45,7 +49,7 @@
     <h1 class="sr-only" data-i18n="app.h1">Panel de escaneos y pruebas CACHAI-QA</h1>
 
     <!-- ============================= INICIO ============================= -->
-    <section id="panel-home" class="panel active" role="tabpanel">
+    <section id="panel-home" class="panel active" role="tabpanel" aria-labelledby="tab-home">
       <h2 class="sr-only" data-i18n="home.title">Resumen general</h2>
 
       <div id="home-empty" class="card empty" hidden>
@@ -101,6 +105,7 @@
           <div class="card-head">
             <h3 data-i18n="home.errors.title">Errores detectados</h3>
             <span id="home-errors-count" class="badge fail"></span>
+            <span id="home-errors-unique" class="badge info" hidden></span>
           </div>
           <p id="home-errors-empty" class="muted" hidden data-i18n="home.errors.empty">No hay errores para el segmento seleccionado.</p>
           <div id="home-errors-list" class="error-list"></div>
@@ -109,7 +114,7 @@
     </section>
 
     <!-- ============================= ESCANEOS ============================= -->
-    <section id="panel-scans" class="panel" role="tabpanel">
+    <section id="panel-scans" class="panel" role="tabpanel" aria-labelledby="tab-scans">
       <div class="panel-head">
         <h2 data-i18n="scans.title">Escaneos guardados</h2>
         <span id="scans-count" class="badge"></span>
@@ -128,6 +133,10 @@
           <span data-i18n="scans.filter.custom">🎯 Personalizado</span>
           <span class="sub-count" data-scan-count="custom">0</span>
         </button>
+        <button type="button" data-scan-filter="favorites">
+          <span data-i18n="scans.filter.favorites">⭐ Guardados</span>
+          <span class="sub-count" data-scan-count="favorites">0</span>
+        </button>
       </div>
 
       <div id="scans-list" class="list"></div>
@@ -135,7 +144,7 @@
     </section>
 
     <!-- ============================= EJECUCIONES ============================= -->
-    <section id="panel-runs" class="panel" role="tabpanel">
+    <section id="panel-runs" class="panel" role="tabpanel" aria-labelledby="tab-runs">
       <div class="panel-head">
         <h2 data-i18n="runs.title">Ejecuciones de tests</h2>
         <span id="runs-count" class="badge"></span>
@@ -157,6 +166,7 @@
       <div id="run-panel-playwright" class="run-subpanel active">
         <div class="runs-layout">
           <div class="runs-main">
+            <div id="playwright-run-banner" class="run-banner" hidden></div>
             <div class="card">
               <div class="card-head">
                 <div class="card-head-title">
@@ -165,8 +175,6 @@
                 </div>
                 <div class="card-head-actions">
                   <span id="playwright-errors-count" class="badge fail"></span>
-                  <button type="button" id="run-tests" class="btn primary" data-i18n="tests.run">Ejecutar tests</button>
-                  <button type="button" id="playwright-trace-btn" class="btn" hidden data-i18n="runs.traceViewer">Abrir Trace Viewer</button>
                   <a id="playwright-current-report" class="btn" target="_blank" rel="noopener" hidden data-i18n="runs.currentReport">Ver Reporte HTML</a>
                 </div>
               </div>
@@ -192,22 +200,18 @@
               <div id="playwright-errors" class="error-list"></div>
             </div>
 
-            <div class="card">
-              <div class="card-head">
+            <details class="card collapsible-card" id="playwright-spec-card">
+              <summary class="card-head collapsible-head">
                 <h3 data-i18n="tests.spec">Especificación generada (Playwright)</h3>
-              </div>
+                <span class="collapse-meta">
+                  <span id="tests-spec-count" class="badge"></span>
+                  <span class="collapse-chevron" aria-hidden="true">▾</span>
+                </span>
+              </summary>
               <p id="tests-spec-path" class="muted"></p>
               <ul id="tests-cases" class="cases"></ul>
               <p id="tests-empty" class="empty" hidden data-i18n="tests.noSpec">No hay tests generados. Ejecuta la opción [4].</p>
-            </div>
-
-            <div class="card" id="tests-output-card" hidden>
-              <div class="card-head">
-                <h3 data-i18n="tests.output">Salida</h3>
-                <span id="tests-status" class="badge"></span>
-              </div>
-              <pre id="tests-output" class="output"></pre>
-            </div>
+            </details>
           </div>
 
           <aside class="runs-sidebar card" aria-label="Historial de ejecuciones de Playwright">
@@ -215,14 +219,6 @@
               <h3 data-i18n="runs.history.executions">Historial de ejecuciones</h3>
               <span id="playwright-runs-count" class="badge"></span>
             </div>
-            <label class="sr-only" for="runs-search-playwright">Buscar ejecución de Playwright</label>
-            <input type="search" id="runs-search-playwright" class="input" placeholder="Buscar ejecución..." data-i18n-placeholder="runs.searchPlaywright" />
-            <label class="sr-only" for="runs-status-playwright">Filtrar por estado</label>
-            <select id="runs-status-playwright" class="input">
-              <option value="all" data-i18n="runs.status.all">Todos los estados</option>
-              <option value="failed" data-i18n="runs.status.failed">Con fallos</option>
-              <option value="passed" data-i18n="runs.status.passed">Sin fallos</option>
-            </select>
             <div id="runs-list-playwright" class="history-list"></div>
             <p id="runs-empty-playwright" class="empty" hidden data-i18n="runs.empty.playwright">No hay ejecuciones de Playwright.</p>
           </aside>
@@ -233,6 +229,7 @@
       <div id="run-panel-cucumber" class="run-subpanel">
         <div class="runs-layout">
           <div class="runs-main">
+            <div id="cucumber-run-banner" class="run-banner" hidden></div>
             <div class="card">
               <div class="card-head">
                 <div class="card-head-title">
@@ -266,17 +263,20 @@
               <div id="cucumber-errors" class="error-list"></div>
             </div>
 
-            <div class="card" id="cucumber-card">
-              <div class="card-head">
+            <details class="card collapsible-card" id="cucumber-card">
+              <summary class="card-head collapsible-head">
                 <h3 data-i18n="runs.cucumber.title">Cucumber BDD &amp; métricas Gherkin</h3>
-                <span id="bdd-status-badge" class="badge">BDD</span>
-              </div>
+                <span class="collapse-meta">
+                  <span id="bdd-status-badge" class="badge">BDD</span>
+                  <span class="collapse-chevron" aria-hidden="true">▾</span>
+                </span>
+              </summary>
               <p class="muted" data-i18n="runs.cucumber.subtitle">Resultados y pasos en lenguaje natural.</p>
               <div id="bdd-metrics-container" class="bdd-metrics">
                 <p id="bdd-metrics-summary" class="muted" data-i18n="runs.cucumber.loading">Cargando métricas BDD…</p>
               </div>
               <div id="cucumber-features"></div>
-            </div>
+            </details>
           </div>
 
           <aside class="runs-sidebar card" aria-label="Historial de reportes de Cucumber">
@@ -284,8 +284,6 @@
               <h3 data-i18n="runs.history.reports">Historial de reportes</h3>
               <span id="cucumber-runs-count" class="badge"></span>
             </div>
-            <label class="sr-only" for="runs-search-cucumber">Buscar reporte de Cucumber</label>
-            <input type="search" id="runs-search-cucumber" class="input" placeholder="Buscar reporte..." data-i18n-placeholder="runs.searchCucumber" />
             <div id="runs-list-cucumber" class="history-list"></div>
             <p id="runs-empty-cucumber" class="empty" hidden data-i18n="runs.empty.cucumber">No hay reportes de Cucumber.</p>
           </aside>
@@ -300,6 +298,20 @@
           <p class="muted" data-i18n="runs.browserstack.soon">Integración con BrowserStack en desarrollo. Próximamente podrás visualizar aquí los resultados de las pruebas ejecutadas en la nube sobre múltiples navegadores y dispositivos reales.</p>
         </div>
       </div>
+    </section>
+
+    <!-- ============================= ACERCA DE ============================= -->
+    <section id="panel-about" class="panel" role="tabpanel" aria-labelledby="tab-about">
+      <div class="panel-head">
+        <h2 data-i18n="about.title">¿Qué hace CACHAI-QA?</h2>
+      </div>
+
+      <div class="segmented sub-tabs" role="group" aria-label="Secciones de ayuda">
+        <button type="button" class="active" data-about-tab="how" data-i18n="about.tab.how">Cómo funciona</button>
+        <button type="button" data-about-tab="glossary" data-i18n="about.tab.glossary">Glosario</button>
+      </div>
+
+      <div id="about-content"></div>
     </section>
   </main>
 

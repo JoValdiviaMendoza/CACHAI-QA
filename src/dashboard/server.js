@@ -14,7 +14,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-const { spawn, exec } = require('child_process');
+const { exec } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const DASHBOARD_DIR = __dirname;
@@ -132,6 +132,7 @@ function readScanMeta(full) {
       pages: obj.metadata.pagesScanned,
       tests: obj.metadata.testsGenerated,
       mode: obj.metadata.mode,
+      scanSource: obj.metadata.scanSource || null,
       timestamp: obj.metadata.timestamp
     };
   }
@@ -268,13 +269,15 @@ function parseCucumberReport(file) {
       const scenarioUrl = steps.map((step) => extractUrl(step.name)).find(Boolean) || '';
       scenarios.push({ name: String(element.name || ''), status, steps, url: scenarioUrl });
     }
-    return { name: String(feature.name || ''), uri: String(feature.uri || ''), scenarios };
+    const featureUrl = extractUrl(feature.description) || extractUrl(feature.name);
+    return { name: String(feature.name || ''), uri: String(feature.uri || ''), url: featureUrl, scenarios };
   });
 
   const st = safeStat(target);
   return {
     reportPath: path.relative(ROOT, target).replace(/\\/g, '/'),
     generatedAt: st ? st.mtimeMs : null,
+    url: parsedFeatures.map((feature) => feature.url).find(Boolean) || '',
     totals,
     features: parsedFeatures
   };
@@ -293,6 +296,28 @@ function formatSlug(ms) {
 function extractUrl(value) {
   const match = String(value || '').match(/https?:\/\/[^\s"'<>)\]]+/i);
   return match ? match[0].replace(/[.,;]+$/, '') : '';
+}
+
+/** Devuelve el origen más repetido de un texto (para inferir la URL de un reporte). */
+function dominantOrigin(value) {
+  const urls = String(value || '').match(/https?:\/\/[^\s"'<>)\]]+/gi) || [];
+  const counts = new Map();
+  for (const url of urls) {
+    try {
+      const origin = new URL(url).origin;
+      counts.set(origin, (counts.get(origin) || 0) + 1);
+    } catch { /* ignora URLs inválidas */ }
+  }
+
+  let best = '';
+  let bestCount = 0;
+  for (const [origin, count] of counts) {
+    if (count > bestCount) {
+      best = origin;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 function joinUrl(base, value) {
@@ -559,12 +584,25 @@ function readPlaywrightReportStats(reportDir) {
           const unexpected = Number(stats.unexpected) || 0;
           const flaky = Number(stats.flaky) || 0;
           const skipped = Number(stats.skipped) || 0;
+
+          // El reporte no guarda la URL base. Si hay un error-context, se
+          // infiere el origen dominante a partir de sus URLs.
+          let inferredUrl = '';
+          try {
+            const dataDir = path.join(reportDir, 'data');
+            const contextFile = fs.readdirSync(dataDir).find((name) => name.toLowerCase().endsWith('.md'));
+            if (contextFile) {
+              inferredUrl = dominantOrigin(fs.readFileSync(path.join(dataDir, contextFile), 'utf8'));
+            }
+          } catch { /* sin URL inferida */ }
+
           result = {
             total: expected + unexpected + flaky + skipped,
             passed: expected,
             failed: unexpected,
             flaky,
-            skipped
+            skipped,
+            url: inferredUrl
           };
         }
       }
@@ -632,6 +670,7 @@ function readPlaywrightOverview() {
         code: diagnosis.code,
         title: diagnosis.title,
         summary: String(spec.title || ''),
+        browser: String(test.projectName || ''),
         file: specFile,
         line: specLine,
         selector,
@@ -649,6 +688,7 @@ function readPlaywrightOverview() {
   }
 
   const report = latestPlaywrightReport();
+  const uniqueErrorsList = groupErrorCards(errorsList);
 
   return {
     available: true,
@@ -667,9 +707,53 @@ function readPlaywrightOverview() {
     duration: Number(stats.duration) || 0,
     health: total ? (expected / total) * 100 : 0,
     reportPath: report ? report.path : null,
-    errorsList,
+    errorsList: uniqueErrorsList,
+    uniqueErrors: uniqueErrorsList.length,
     stats: { expected, unexpected, flaky, skipped, duration: Number(stats.duration) || 0 }
   };
+}
+
+/**
+ * Clave de defecto: mismo motor, mismo diagnóstico y misma URL afectada.
+ * Se ignoran query/hash y la barra final para no duplicar el mismo enlace.
+ */
+function defectKey(card) {
+  const url = String(card.url || '')
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  return `${card.code || 'ERR'}|${url}`;
+}
+
+/**
+ * Agrupa los fallos que corresponden al mismo defecto (por ejemplo, el mismo
+ * enlace roto en chromium, firefox y chrome) y anota cuántas veces ocurrió y
+ * en qué navegadores.
+ */
+function groupErrorCards(cards) {
+  const groups = new Map();
+  for (const card of cards) {
+    const key = defectKey(card);
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        ...card,
+        groupKey: key,
+        occurrences: 1,
+        browsers: card.browser ? [card.browser] : []
+      });
+      continue;
+    }
+    existing.occurrences += 1;
+    if (card.browser && existing.browsers.indexOf(card.browser) === -1) {
+      existing.browsers.push(card.browser);
+    }
+    if (!existing.technicalLog && card.technicalLog) existing.technicalLog = card.technicalLog;
+    if ((!existing.attachments || existing.attachments.length === 0) && card.attachments && card.attachments.length) {
+      existing.attachments = card.attachments;
+    }
+  }
+  return Array.from(groups.values());
 }
 
 function cucumberErrorCards(cucumber, targetUrl) {
@@ -714,7 +798,7 @@ function readCucumberOverview() {
     .map((scenario) => scenario.url)
     .find(Boolean);
   const targetUrl = summary ? summary.url : (firstScenarioUrl || '');
-  const errorsList = cucumberErrorCards(cucumber, targetUrl);
+  const errorsList = groupErrorCards(cucumberErrorCards(cucumber, targetUrl));
   const total = cucumber.totals.totalScenarios;
   const successes = cucumber.totals.scenariosPassed;
   const warnings = cucumber.totals.scenariosSkipped;
@@ -740,8 +824,312 @@ function readCucumberOverview() {
     health: total ? (successes / total) * 100 : 0,
     reportPath,
     errorsList,
+    uniqueErrors: errorsList.length,
     totals: cucumber.totals
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Detalle de una ejecución histórica
+ * ------------------------------------------------------------------ */
+
+const playwrightDetailCache = new Map();
+
+/**
+ * Extrae del ZIP embebido en el index.html:
+ *  - report.json: índice y estadísticas.
+ *  - <fileId>.json: detalle de cada archivo, con los errores de cada test.
+ */
+function readPlaywrightReportBundle(reportDir) {
+  const indexPath = path.join(reportDir, 'index.html');
+  const st = safeStat(indexPath);
+  if (!st) return null;
+
+  const key = indexPath + '|' + st.mtimeMs + '|' + st.size;
+  if (playwrightDetailCache.has(key)) return playwrightDetailCache.get(key);
+
+  let bundle = null;
+  try {
+    const html = fs.readFileSync(indexPath, 'utf8');
+    const match = html.match(/id="playwrightReportBase64"[^>]*>\s*data:application\/zip;base64,([^<]+)/i);
+    if (match) {
+      const zip = Buffer.from(match[1].trim(), 'base64');
+      const summaryRaw = readZipEntry(zip, 'report.json');
+      if (summaryRaw) {
+        const summary = JSON.parse(summaryRaw.toString('utf8'));
+        const details = [];
+        for (const file of summary.files || []) {
+          if (!file || !file.fileId) continue;
+          const raw = readZipEntry(zip, file.fileId + '.json');
+          if (!raw) continue;
+          try { details.push(JSON.parse(raw.toString('utf8'))); } catch { /* archivo ilegible */ }
+        }
+        bundle = { summary, details };
+      }
+    }
+  } catch {
+    bundle = null;
+  }
+
+  if (playwrightDetailCache.size > 8) playwrightDetailCache.clear();
+  playwrightDetailCache.set(key, bundle);
+  return bundle;
+}
+
+/** Convierte los fallos de un reporte de Playwright en tarjetas agrupadas. */
+function playwrightErrorsFromReport(bundle, targetUrl, reportDir) {
+  if (!bundle) return [];
+
+  const { summary, details } = bundle;
+  const candidates = [];
+  const seen = new Set();
+
+  for (const detail of details) {
+    for (const test of detail.tests || []) {
+      if (test.ok) continue;
+      if (test.outcome && test.outcome !== 'unexpected') continue;
+      const testId = test.testId || `${detail.fileName}|${test.title}|${test.projectName}`;
+      if (seen.has(testId)) continue;
+      seen.add(testId);
+      const result = (test.results || []).find((item) => item.status === 'failed') || (test.results || [])[0] || {};
+      candidates.push({ test, result, file: detail.fileName || (test.location && test.location.file) });
+      if (candidates.length >= 200) break;
+    }
+    if (candidates.length >= 200) break;
+  }
+
+  // Compatibilidad con reportes que usan la estructura antigua (suites/specs).
+  if (candidates.length === 0) {
+    const specs = [];
+    collectFailedSpecs(summary, specs, 120);
+    for (const spec of specs) {
+      for (const test of spec.tests || []) {
+        const result = (test.results || []).find((item) => item.status === 'failed') || (test.results || [])[0] || {};
+        candidates.push({ test, result, file: spec.file, specTitle: spec.title, specLine: spec.line });
+      }
+    }
+  }
+
+  const errorsList = [];
+  for (const candidate of candidates) {
+    if (errorsList.length >= 120) break;
+
+    const { test, result, file, specTitle, specLine } = candidate;
+    const error = result.error || (result.errors && result.errors[0]) || {};
+    const message = String(error.message || error.value || '');
+    const testTitle = String(test.title || specTitle || '');
+    const pagePath = (testTitle.match(/«([^»]+)»/) || [])[1] || '';
+    const origin = pagePath ? joinUrl(targetUrl, pagePath) : targetUrl;
+    const affected = extractUrl(message) || origin;
+    const diagnosis = diagnose(message);
+    const specFile = file ? path.basename(file) : '';
+    const lineNumber = (test.location && test.location.line) || specLine || '';
+    const selectorMatch = message.match(/Locator:\s*([^\n]+)/i) || message.match(/locator\(([^)]*)\)/i);
+    const selector = selectorMatch ? selectorMatch[1].trim() : '';
+    const attachments = (result.attachments || [])
+      .map((attachment) => {
+        if (!attachment.path) return null;
+        const publicPath = publicAttachment(path.resolve(reportDir, attachment.path));
+        return publicPath ? {
+          name: attachment.name || 'adjunto',
+          type: attachment.contentType || '',
+          path: publicPath
+        } : null;
+      })
+      .filter(Boolean);
+
+    errorsList.push({
+      id: 'pw-' + errorsList.length,
+      engine: 'playwright',
+      code: diagnosis.code,
+      title: diagnosis.title,
+      summary: testTitle,
+      browser: String(test.projectName || ''),
+      file: specFile,
+      line: lineNumber,
+      selector,
+      url: affected,
+      origin,
+      diagnosis: diagnosis.diagnosis,
+      recommendation: diagnosis.recommendation,
+      technicalLog: message + (error.stack ? '\n\n' + error.stack : ''),
+      attachments
+    });
+  }
+
+  return groupErrorCards(errorsList);
+}
+
+function readPlaywrightRunDetail(reportPath) {
+  const full = path.resolve(ROOT, reportPath);
+  const st = safeStat(full);
+  if (!st || !st.isFile()) return null;
+
+  const reportDir = path.dirname(full);
+  const stats = readPlaywrightReportStats(reportDir);
+  const bundle = readPlaywrightReportBundle(reportDir);
+  const summary = frameworkSummaryNear(st.mtimeMs);
+  const targetUrl = (summary && summary.url) || (stats && stats.url) || '';
+  const errorsList = playwrightErrorsFromReport(bundle, targetUrl, reportDir);
+
+  const expected = stats ? stats.passed : 0;
+  const unexpected = stats ? stats.failed : 0;
+  const flaky = stats ? (stats.flaky || 0) : 0;
+  const skipped = stats ? stats.skipped : 0;
+  const total = stats ? stats.total : 0;
+
+  return {
+    available: true,
+    type: 'playwright',
+    reportPath,
+    timestamp: st.mtimeMs,
+    startedAt: new Date(st.mtimeMs).toISOString(),
+    url: targetUrl,
+    pages: summary ? summary.pages : null,
+    total,
+    successes: expected,
+    warnings: skipped + flaky,
+    errors: unexpected,
+    executed: expected + unexpected + flaky,
+    skipped,
+    duration: bundle && bundle.summary ? (Number(bundle.summary.duration) || 0) : 0,
+    health: total ? (expected / total) * 100 : 0,
+    errorsList,
+    uniqueErrors: errorsList.length
+  };
+}
+
+function readCucumberRunDetail(reportPath) {
+  const full = path.resolve(ROOT, reportPath);
+  const st = safeStat(full);
+  if (!st || !st.isFile()) return null;
+
+  const dir = path.dirname(full);
+  const name = path.basename(full);
+  const slugMatch = /^cucumber-report-(\d{8}-\d{6})\.html$/i.exec(name);
+  const jsonName = slugMatch ? `cucumber-report-${slugMatch[1]}.json` : 'cucumber-report.json';
+  const jsonPath = path.join(dir, jsonName);
+  if (!fs.existsSync(jsonPath)) return null;
+
+  const cucumber = parseCucumberReport(jsonPath);
+  if (!cucumber) return null;
+
+  const summary = frameworkSummaryNear(st.mtimeMs);
+  const firstScenarioUrl = (cucumber.features || [])
+    .flatMap((feature) => feature.scenarios || [])
+    .map((scenario) => scenario.url)
+    .find(Boolean);
+  const targetUrl = (summary && summary.url) || firstScenarioUrl || '';
+  const errorsList = groupErrorCards(cucumberErrorCards(cucumber, targetUrl));
+  const total = cucumber.totals.totalScenarios;
+  const successes = cucumber.totals.scenariosPassed;
+  const warnings = cucumber.totals.scenariosSkipped;
+  const errors = cucumber.totals.scenariosFailed;
+
+  return {
+    available: true,
+    type: 'cucumber',
+    reportPath,
+    timestamp: st.mtimeMs,
+    startedAt: new Date(st.mtimeMs).toISOString(),
+    url: targetUrl,
+    pages: summary ? summary.pages : null,
+    elements: cucumber.totals.totalSteps,
+    total,
+    successes,
+    warnings,
+    errors,
+    executed: successes + errors,
+    skipped: warnings,
+    duration: 0,
+    health: total ? (successes / total) * 100 : 0,
+    errorsList,
+    uniqueErrors: errorsList.length,
+    totals: cucumber.totals,
+    features: cucumber.features
+  };
+}
+
+/** Resuelve un reporte dentro de reports/ evitando rutas fuera del proyecto. */
+function resolveReportPath(file) {
+  if (!file || typeof file !== 'string') return null;
+  const full = path.resolve(ROOT, file);
+  const reportsDir = path.join(ROOT, 'reports');
+  if (full !== reportsDir && !full.startsWith(reportsDir + path.sep)) return null;
+  if (!/\.html$/i.test(full)) return null;
+  return full;
+}
+
+function removePathRecursive(target) {
+  try {
+    fs.rmSync(target, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Elimina los artefactos de una ejecución (reporte HTML, JSON y adjuntos). */
+function deleteRunArtifacts(run) {
+  const deleted = [];
+
+  if (run.type === 'playwright') {
+    const latest = latestPlaywrightReport();
+    const dir = path.join(ROOT, 'reports', run.id);
+    if (fs.existsSync(dir) && removePathRecursive(dir)) deleted.push('reports/' + run.id);
+
+    // results.json representa la última ejecución; solo se borra si esta
+    // ejecución es efectivamente la más reciente.
+    if (latest && latest.path === run.reportPath) {
+      const results = path.join(ROOT, 'reports', 'results.json');
+      if (fs.existsSync(results)) {
+        try { fs.unlinkSync(results); deleted.push('reports/results.json'); } catch { /* ignorar */ }
+      }
+    }
+  } else if (run.type === 'cucumber') {
+    const latest = latestCucumberReport();
+    const html = path.join(ROOT, run.reportPath);
+    const json = path.join(ROOT, 'reports', 'cucumber', `cucumber-report-${run.slug}.json`);
+    for (const file of [html, json]) {
+      if (fs.existsSync(file)) {
+        try { fs.unlinkSync(file); deleted.push(path.relative(ROOT, file).replace(/\\/g, '/')); } catch { /* ignorar */ }
+      }
+    }
+
+    // Copias estáticas que alimentan el resumen, solo si son las más recientes.
+    if (latest && latest.path === run.reportPath) {
+      for (const name of ['cucumber-report.html', 'cucumber-report.json', 'bdd-metrics.json']) {
+        const file = path.join(ROOT, 'reports', name === 'bdd-metrics.json' ? name : path.join('cucumber', name));
+        if (fs.existsSync(file)) {
+          try { fs.unlinkSync(file); deleted.push(path.relative(ROOT, file).replace(/\\/g, '/')); } catch { /* ignorar */ }
+        }
+      }
+    }
+  }
+
+  return deleted;
+}
+
+/** Ejecuciones vinculadas a un escaneo (por resumen de generación o scanSource). */
+function runsForScan(scan, relFile) {
+  const WINDOW = 15 * 60 * 1000;
+  const runs = listTestRuns();
+  if (scan.kind === 'framework') {
+    const targets = runs.filter((run) => run.summaryFile === relFile
+      && Math.abs(run.mtime - scan.mtime) <= WINDOW);
+    return { runs: targets, summaries: [] };
+  }
+  if (scan.kind === 'crawl') {
+    const summaries = listScanFiles().filter((item) => item.kind === 'framework' && item.scanSource === relFile);
+    const files = new Set(summaries.map((item) => item.file));
+    const targets = runs.filter((run) => {
+      if (!run.summaryFile || !files.has(run.summaryFile)) return false;
+      const summary = summaries.find((item) => item.file === run.summaryFile);
+      return Boolean(summary && Math.abs(run.mtime - summary.mtime) <= WINDOW);
+    });
+    return { runs: targets, summaries };
+  }
+  return { runs: [], summaries: [] };
 }
 
 function readScanOverview() {
@@ -771,10 +1159,15 @@ function readScanOverview() {
 }
 
 function buildOverview() {
-  const playwright = readPlaywrightOverview();
-  const cucumber = readCucumberOverview();
+  // Si no queda ningún escaneo guardado, el inicio debe quedar vacío: los
+  // reportes HTML por sí solos no cuentan como un escaneo disponible.
+  const scans = listScanFiles();
+  const hasScans = scans.some((scan) => scan.kind === 'crawl' || scan.kind === 'framework');
+
+  const playwright = hasScans ? readPlaywrightOverview() : null;
+  const cucumber = hasScans ? readCucumberOverview() : null;
   const candidates = [playwright, cucumber].filter(Boolean).sort((a, b) => b.timestamp - a.timestamp);
-  const latest = candidates[0] || readScanOverview();
+  const latest = candidates[0] || (hasScans ? readScanOverview() : null);
 
   const brief = (execution) => execution ? {
     available: true,
@@ -790,7 +1183,8 @@ function buildOverview() {
     duration: execution.duration || null,
     health: execution.health,
     reportPath: execution.reportPath,
-    errorsList: execution.errorsList
+    errorsList: execution.errorsList,
+    uniqueErrors: execution.uniqueErrors != null ? execution.uniqueErrors : (execution.errorsList || []).length
   } : { available: false };
 
   if (!latest) {
@@ -825,6 +1219,7 @@ function buildOverview() {
       successes,
       warnings,
       errors,
+      uniqueErrors: latest.uniqueErrors != null ? latest.uniqueErrors : errors,
       pages: latest.pages,
       elements: latest.elements,
       executed: latest.executed,
@@ -982,7 +1377,8 @@ function listTestRuns() {
       tests: parsed ? parsed.totals.totalScenarios : null,
       passed: parsed ? parsed.totals.scenariosPassed : null,
       failed: parsed ? parsed.totals.scenariosFailed : null,
-      skipped: parsed ? parsed.totals.scenariosSkipped : null
+      skipped: parsed ? parsed.totals.scenariosSkipped : null,
+      url: parsed && parsed.url ? parsed.url : undefined
     });
   };
 
@@ -1007,14 +1403,16 @@ function listTestRuns() {
     }
   }
 
-  runs.sort((a, b) => b.mtime - a.mtime);
+  runs.sort((a, b) => {
+    const ta = a.startedAt ? Date.parse(a.startedAt) : NaN;
+    const tb = b.startedAt ? Date.parse(b.startedAt) : NaN;
+    return (Number.isFinite(tb) ? tb : b.mtime) - (Number.isFinite(ta) ? ta : a.mtime);
+  });
 
   // Métricas de reportes Playwright anteriores. El reporte más reciente se
   // omite porque sus métricas ya vienen de reports/results.json (overview).
   const playwrightRuns = runs.filter((run) => run.type === 'playwright');
-  const latestPlaywright = playwrightRuns.reduce((best, run) => (!best || run.mtime > best.mtime ? run : best), null);
   for (const run of playwrightRuns) {
-    if (latestPlaywright && run === latestPlaywright) continue;
     const reportDir = path.join(ROOT, run.reportPath.replace(/\/index\.html$/i, ''));
     const stats = readPlaywrightReportStats(reportDir);
     if (stats) {
@@ -1022,6 +1420,7 @@ function listTestRuns() {
       run.passed = stats.passed;
       run.failed = stats.failed;
       run.skipped = stats.skipped;
+      if (stats.url && !run.url) run.url = stats.url;
     }
   }
 
@@ -1035,7 +1434,7 @@ function listTestRuns() {
       if (diff < bestDiff) { bestDiff = diff; best = s; }
     }
     if (best && bestDiff <= WINDOW) {
-      run.url = best.url;
+      if (best.url) run.url = best.url;
       run.pages = best.pages;
       if (run.tests == null) run.tests = best.tests;
       run.summaryFile = best.file;
@@ -1043,49 +1442,6 @@ function listTestRuns() {
   }
 
   return runs;
-}
-
-// ------------------------------------------------------------------
-// Jobs de ejecución de tests
-// ------------------------------------------------------------------
-
-const jobs = new Map();
-let jobSeq = 0;
-
-function startTestJob() {
-  const id = 'job' + (++jobSeq);
-  const job = { id, status: 'running', output: '', exitCode: null, started: Date.now(), finished: null };
-  jobs.set(id, job);
-
-  const cwd = path.join(ROOT, 'reports', 'generated-tests');
-  const configFile = path.join(cwd, 'playwright.config.ts');
-  if (!fs.existsSync(configFile)) {
-    job.status = 'error';
-    job.exitCode = 1;
-    job.finished = Date.now();
-    job.output = 'No hay tests generados. Ejecuta primero la opcion [4] (Generar / Ejecutar Tests).';
-    return job;
-  }
-
-  const child = spawn('npx playwright test --config=playwright.config.ts', {
-    cwd,
-    shell: true,
-    env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' }
-  });
-  child.stdout.on('data', (d) => { job.output += d.toString(); });
-  child.stderr.on('data', (d) => { job.output += d.toString(); });
-  child.on('close', (code) => {
-    job.status = code === 0 ? 'done' : 'failed';
-    job.exitCode = code;
-    job.finished = Date.now();
-  });
-  child.on('error', (err) => {
-    job.status = 'error';
-    job.exitCode = -1;
-    job.finished = Date.now();
-    job.output += '\n' + err.message;
-  });
-  return job;
 }
 
 // ------------------------------------------------------------------
@@ -1175,9 +1531,58 @@ async function handle(req, res) {
     const full = resolveScanPath(parsed.searchParams.get('file'));
     if (!full || !fs.existsSync(full)) return sendJson(res, 404, { error: 'Escaneo no encontrado' });
     try {
+      const relFile = path.relative(ROOT, full).replace(/\\/g, '/');
+      const scan = listScanFiles().find((item) => item.file === relFile) || readScanMeta(full);
+
+      // Un escaneo puede tener ejecuciones asociadas. Se eliminan también
+      // para que las pestañas Escaneos y Ejecuciones queden consistentes.
+      const related = scan ? runsForScan(scan, relFile) : { runs: [], summaries: [] };
+      const deleted = [];
+      for (const run of related.runs) deleted.push(...deleteRunArtifacts(run));
+      for (const summary of related.summaries) {
+        const summaryFull = path.resolve(ROOT, summary.file);
+        try { fs.unlinkSync(summaryFull); deleted.push(summary.file); } catch { /* ignorar */ }
+      }
+
       fs.unlinkSync(full);
       scansCache = { at: 0, data: [] };
-      return sendJson(res, 200, { ok: true, file: path.relative(ROOT, full).replace(/\\/g, '/') });
+      playwrightDetailCache.clear();
+      return sendJson(res, 200, {
+        ok: true,
+        file: relFile,
+        deletedRuns: related.runs.length,
+        deleted
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: 'No se pudo eliminar: ' + String(e) });
+    }
+  }
+
+  if (pathname === '/api/run' && method === 'GET') {
+    const full = resolveReportPath(parsed.searchParams.get('path'));
+    if (!full || !fs.existsSync(full)) return sendJson(res, 404, { error: 'Reporte no encontrado' });
+    const rel = path.relative(ROOT, full).replace(/\\/g, '/');
+    try {
+      const detail = /playwright-report-/i.test(rel)
+        ? readPlaywrightRunDetail(rel)
+        : readCucumberRunDetail(rel);
+      if (!detail) return sendJson(res, 422, { error: 'No se pudo interpretar el reporte' });
+      return sendJson(res, 200, detail);
+    } catch (e) {
+      return sendJson(res, 500, { error: 'No se pudo leer el reporte: ' + String(e) });
+    }
+  }
+
+  if (pathname === '/api/run' && method === 'DELETE') {
+    const full = resolveReportPath(parsed.searchParams.get('path'));
+    if (!full || !fs.existsSync(full)) return sendJson(res, 404, { error: 'Reporte no encontrado' });
+    const rel = path.relative(ROOT, full).replace(/\\/g, '/');
+    const run = listTestRuns().find((item) => item.reportPath === rel);
+    if (!run) return sendJson(res, 404, { error: 'Ejecución no encontrada' });
+    try {
+      const deleted = deleteRunArtifacts(run);
+      playwrightDetailCache.clear();
+      return sendJson(res, 200, { ok: true, path: rel, deleted });
     } catch (e) {
       return sendJson(res, 500, { error: 'No se pudo eliminar: ' + String(e) });
     }
@@ -1191,19 +1596,6 @@ async function handle(req, res) {
   if (pathname === '/api/runs' && method === 'GET') {
     try { return sendJson(res, 200, { runs: listTestRuns() }); }
     catch (e) { return sendJson(res, 500, { error: String(e) }); }
-  }
-
-  if (pathname === '/api/tests/run' && method === 'POST') {
-    await readBody(req);
-    const job = startTestJob();
-    return sendJson(res, 200, { id: job.id, status: job.status });
-  }
-
-  if (pathname.startsWith('/api/tests/run/') && method === 'GET') {
-    const id = pathname.substring('/api/tests/run/'.length);
-    const job = jobs.get(id);
-    if (!job) return sendJson(res, 404, { error: 'Job no encontrado' });
-    return sendJson(res, 200, { id: job.id, status: job.status, exitCode: job.exitCode, output: job.output });
   }
 
   if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Endpoint no encontrado' });

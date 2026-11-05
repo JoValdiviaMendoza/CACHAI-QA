@@ -10,7 +10,7 @@ cd cachai-qa
 npm install
 
 # 3. Instalar navegadores de Playwright
-npx playwright install chromium
+npx playwright install chromium firefox
 ```
 
 ## 🕷️ Uso del Crawler (Plug & Play)
@@ -92,7 +92,12 @@ npm run tests:from-scan
 
 # Elegir un escaneo concreto y ejecutar las pruebas
 npx ts-node cli/from-scan.ts --scan=scan-report/mi-sitio-20260115-103000.json --run
+
+# Ajustar paralelismo y enlaces por página
+npx ts-node cli/from-scan.ts --scan=scan-report/mi-sitio-20260115-103000.json --run --workers=3 --max-links=25
 ```
+
+> Los enlaces se comprueban **una sola vez**, aunque haya varios navegadores: la comprobación es HTTP y no depende del navegador. Un enlace que responde 4xx/5xx se marca como roto; uno que no responde a tiempo se marca como *sin verificar* (advertencia), no como fallo.
 
 ## 📝 Requisitos
 

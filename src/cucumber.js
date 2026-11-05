@@ -25,9 +25,9 @@ module.exports = {
     formatOptions: {
       snippetInterface: 'async-await'
     },
-    timeout: 120000,
-    retry: 1,
-    parallel: 1,
+    timeout: 240000,
+    retry: 0,
+    parallel: Math.max(1, Math.min(32, Number(process.env.CUCUMBER_PARALLEL) || 5)),
     failFast: false,
     dryRun: false
   }
