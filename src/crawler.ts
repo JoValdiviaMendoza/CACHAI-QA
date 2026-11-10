@@ -80,10 +80,31 @@ function isInternalUrl(url: string, baseHostname: string): boolean {
   }
 }
 
+const DOWNLOAD_EXTENSIONS = /\.(pdf|zip|rar|7z|tar|gz|tgz|docx?|xlsx?|pptx?|csv|rtf|odt|ods|odp|exe|dmg|msi|apk|iso|mp3|mp4|avi|mov|wmv|webm|wav|woff2?|ttf|otf)$/i;
+const DOWNLOAD_QUERY = /(?:^|[?&])(download|force_download)=/i;
+
+function isDownloadableUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return DOWNLOAD_EXTENSIONS.test(parsed.pathname) || DOWNLOAD_QUERY.test(parsed.search);
+  } catch {
+    return DOWNLOAD_EXTENSIONS.test(url) || DOWNLOAD_QUERY.test(url);
+  }
+}
+
+function isHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function shouldIgnoreUrl(url: string): boolean {
   const ignorePatterns = [
-    /\.pdf$/i, /\.zip$/i, /\.exe$/i, /\.dmg$/i,
     /mailto:/i, /tel:/i, /javascript:/i,
+    /^(data|blob|chrome|about):/i,
     /#.*$/, /\?.*utm_source=/i
   ];
   return ignorePatterns.some(p => p.test(url));
@@ -254,6 +275,10 @@ class SimpleCrawler {
   private queue: any[] = [];
   private results: any[] = [];
   private errors: string[] = [];
+  private downloads: Array<{ url: string; text: string; sourceUrl: string; reason: string }> = [];
+  private invalidLinks: Array<{ url: string; text: string; sourceUrl: string; reason: string }> = [];
+  private downloadSeen = new Set<string>();
+  private invalidSeen = new Set<string>();
   private pageCount = 0;
   private activeWorkers = 0;
   private cancelled = false;
@@ -348,6 +373,15 @@ class SimpleCrawler {
 
       const { url, depth, parentUrl } = item;
 
+      if (!isHttpUrl(url)) {
+        this.addInvalidLink(url, '', parentUrl, 'Protocolo no soportado');
+        continue;
+      }
+      if (isDownloadableUrl(url)) {
+        this.addDownload(url, '', parentUrl);
+        continue;
+      }
+
       if (this.visited.has(url)) continue;
       if (depth > this.options.depth) continue;
 
@@ -369,6 +403,11 @@ class SimpleCrawler {
         } catch (error) {
           retries--;
           const msg = error instanceof Error ? error.message : String(error);
+
+          if (/Download is starting/i.test(msg)) {
+            this.addDownload(item.url, '', parentUrl);
+            break;
+          }
 
           const isNetworkError = msg.includes('ERR_ABORTED') ||
                                 msg.includes('net::') ||
@@ -500,10 +539,17 @@ class SimpleCrawler {
 
         if (normalized) {
           if (shouldIgnoreUrl(normalized)) continue;
+          if (!isHttpUrl(normalized)) {
+            this.addInvalidLink(rawUrl || normalized, element.text, url, 'Protocolo no soportado');
+            continue;
+          }
           if (this.visited.has(normalized)) continue;
           if (!matchesPatterns(normalized, this.options.includePatterns)) continue;
           if (shouldExcludeUrl(normalized, this.options.excludePatterns)) continue;
         }
+
+        const downloadable = Boolean(normalized && isDownloadableUrl(normalized));
+        if (downloadable) this.addDownload(normalized, element.text, url);
 
         const isInternal = normalized ? isInternalUrl(normalized, this.baseHostname) : true;
 
@@ -527,7 +573,7 @@ class SimpleCrawler {
           listed++;
         }
 
-        if (normalized && isInternal && depth < this.options.depth && element.tagName === 'a') {
+        if (normalized && !downloadable && isInternal && depth < this.options.depth && element.tagName === 'a') {
           this.queue.push({ url: normalized, depth: depth + 1, parentUrl: url });
         }
       }
@@ -543,6 +589,14 @@ class SimpleCrawler {
           for (const a of anchors) {
             const normalized = normalizeUrl(a.href, url);
             if (!normalized || shouldIgnoreUrl(normalized)) continue;
+            if (!isHttpUrl(normalized)) {
+              this.addInvalidLink(a.href || normalized, '', url, 'Protocolo no soportado');
+              continue;
+            }
+            if (isDownloadableUrl(normalized)) {
+              this.addDownload(normalized, '', url);
+              continue;
+            }
             if (!isInternalUrl(normalized, this.baseHostname)) continue;
             if (this.visited.has(normalized)) continue;
             if (!matchesPatterns(normalized, this.options.includePatterns)) continue;
@@ -578,6 +632,28 @@ class SimpleCrawler {
     await this.browser?.close();
   }
 
+  private addDownload(url: string, text: string, sourceUrl: string): void {
+    if (this.downloadSeen.has(url)) return;
+    this.downloadSeen.add(url);
+    this.downloads.push({
+      url,
+      text: String(text || '').substring(0, 200),
+      sourceUrl,
+      reason: 'Archivo descargable (no se navega)'
+    });
+  }
+
+  private addInvalidLink(url: string, text: string, sourceUrl: string, reason: string): void {
+    if (this.invalidSeen.has(url)) return;
+    this.invalidSeen.add(url);
+    this.invalidLinks.push({
+      url,
+      text: String(text || '').substring(0, 200),
+      sourceUrl,
+      reason
+    });
+  }
+
   private generateReport(): any {
     return {
       baseUrl: this.options.url,
@@ -586,12 +662,19 @@ class SimpleCrawler {
       totalLinks: this.results.length,
       links: this.results,
       errors: this.errors,
+      downloads: this.downloads,
+      invalidLinks: this.invalidLinks,
       scanMeta: {
         elementType: this.options.elementType,
         selector: this.options.selector,
         depth: this.options.depth,
         maxPages: this.options.maxPages,
-        concurrency: this.options.concurrency
+        concurrency: this.options.concurrency,
+        summary: {
+          errors: this.errors.length,
+          downloads: this.downloads.length,
+          invalidLinks: this.invalidLinks.length
+        }
       }
     };
   }

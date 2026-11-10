@@ -87,6 +87,7 @@ Before(function () {
 const REINTENTOS_ENLACE = 2;
 const TIMEOUT_ENLACE_MS = 8000;
 const CONCURRENCIA_ENLACES = 4;
+const ERROR_RED_RE = /ECONNREFUSED|ENOTFOUND|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_SSL|ERR_CERT|ERR_TOO_MANY_REDIRECTS|ERR_UNSAFE_REDIRECT|ERR_INVALID_URL|Protocol .* not supported|ERR_ABORTED/i;
 
 interface ResultadoEnlace {
   url: string;
@@ -97,7 +98,8 @@ interface ResultadoEnlace {
 
 /**
  * Comprueba un enlace y distingue dos situaciones muy distintas:
- *  - roto: el servidor respondio 4xx/5xx (defecto real del sitio).
+ *  - roto: el servidor respondio 4xx/5xx o hubo un error de red/infraestructura
+ *    (DNS, conexion rechazada, SSL, URL invalida). Es un defecto real.
  *  - sin-verificar: la peticion no termino a tiempo tras varios intentos
  *    (lentitud o rate limiting; no se cuenta como enlace roto).
  */
@@ -119,7 +121,8 @@ async function comprobarEnlace(current: Page, url: string): Promise<ResultadoEnl
       }
     }
   }
-  return { url, estado: "sin-verificar", error: ultimoError };
+  const estado = ERROR_RED_RE.test(ultimoError) ? "roto" : "sin-verificar";
+  return { url, estado, error: ultimoError };
 }
 
 /** Comprueba los enlaces con un pool pequeno para no saturar el sitio. */
@@ -230,7 +233,9 @@ Then(/^todos deben responder con un código menor a (\d+)$/, async function (lim
   }
 
   expect(
-    rotos.map((resultado) => resultado.url + " respondio HTTP " + resultado.status),
+    rotos.map((resultado) => resultado.status
+      ? resultado.url + " respondio HTTP " + resultado.status
+      : resultado.url + " no se pudo conectar: " + (resultado.error || "error de red")),
     "Los enlaces internos deben responder con un codigo menor a " + limit
   ).toEqual([]);
 });

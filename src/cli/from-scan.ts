@@ -68,6 +68,8 @@ interface ScanFile {
   totalLinks?: number;
   links?: ScanElement[];
   errors?: string[];
+  downloads?: Array<{ url?: string; text?: string; sourceUrl?: string; reason?: string }>;
+  invalidLinks?: Array<{ url?: string; text?: string; sourceUrl?: string; reason?: string }>;
   scanMeta?: ScanMeta;
 }
 
@@ -401,7 +403,9 @@ function linksScenario(
   body.push('    }');
   body.push('');
   body.push('    expect(');
-  body.push('      rotos.map((resultado) => `${resultado.texto} (${resultado.url}) respondió HTTP ${resultado.status}`),');
+  body.push('      rotos.map((resultado) => resultado.status');
+  body.push('        ? `${resultado.texto} (${resultado.url}) respondió HTTP ${resultado.status}`');
+  body.push("        : `${resultado.texto} (${resultado.url}) no se pudo conectar: ${resultado.error || 'error de red'}`),");
   body.push("      'Los enlaces internos deben responder con un código menor a 400'");
   body.push('    ).toEqual([]);');
 
@@ -624,6 +628,7 @@ function buildSpecFile(pageSpecs: PageScenarios[], meta: { scanPath: string; gen
   lines.push('const REINTENTOS_ENLACE = 2;');
   lines.push('const TIMEOUT_ENLACE_MS = 8000;');
   lines.push(`const CONCURRENCIA_ENLACES = ${LINKS_CONCURRENCY};`);
+  lines.push('const ERROR_RED_RE = /ECONNREFUSED|ENOTFOUND|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_SSL|ERR_CERT|ERR_TOO_MANY_REDIRECTS|ERR_UNSAFE_REDIRECT|ERR_INVALID_URL|Protocol .* not supported|ERR_ABORTED/i;');
   lines.push('');
   lines.push('interface EnlaceEscaneado { texto: string; url: string; }');
   lines.push('interface ResultadoEnlace {');
@@ -636,7 +641,8 @@ function buildSpecFile(pageSpecs: PageScenarios[], meta: { scanPath: string; gen
   lines.push('');
   lines.push('/**');
   lines.push(' * Comprueba un enlace y distingue dos situaciones muy distintas:');
-  lines.push(' *  - roto: el servidor respondió 4xx/5xx (defecto real del sitio).');
+  lines.push(' *  - roto: el servidor respondió 4xx/5xx o hubo un error de red/infraestructura');
+  lines.push(' *    (DNS, conexión rechazada, SSL, URL inválida). Es un defecto real.');
   lines.push(' *  - sin-verificar: la petición no terminó a tiempo tras varios intentos');
   lines.push(' *    (lentitud o rate limiting; no se cuenta como enlace roto).');
   lines.push(' */');
@@ -663,7 +669,8 @@ function buildSpecFile(pageSpecs: PageScenarios[], meta: { scanPath: string; gen
   lines.push('      }');
   lines.push('    }');
   lines.push('  }');
-  lines.push("  return { texto: enlace.texto, url: enlace.url, estado: 'sin-verificar', error: ultimoError };");
+  lines.push("  const estado = ERROR_RED_RE.test(ultimoError) ? 'roto' : 'sin-verificar';");
+  lines.push("  return { texto: enlace.texto, url: enlace.url, estado, error: ultimoError };");
   lines.push('}');
   lines.push('');
   lines.push('/** Ejecuta las comprobaciones con un pool pequeño para no saturar el sitio. */');
@@ -835,6 +842,9 @@ function buildSummary(
       testsGenerated: tests.length,
       scanSource: toPosix(path.relative(options.root, scanPath)),
       scanTimestamp: scan.timestamp || null,
+      scanErrors: scan.errors?.length || 0,
+      skippedDownloads: scan.downloads?.length || 0,
+      invalidLinks: scan.invalidLinks?.length || 0,
       config: {
         elementType: scan.scanMeta?.elementType || 'links',
         depth: counter(scan.scanMeta?.depth, 0),
@@ -1028,8 +1038,14 @@ async function main(): Promise<void> {
   console.log(`Pasos BDD:    ${toPosix(path.relative(root, stepsPath))}`);
   console.log(`Config:       ${toPosix(path.relative(root, configPath))}`);
   console.log(`Resumen JSON: ${toPosix(path.relative(root, summaryPath))}`);
-  if (scan.errors && scan.errors.length > 0) {
-    console.log(`Errores del escaneo: ${scan.errors.length} (revisa el JSON original)`);
+  const scanErrors = scan.errors?.length || 0;
+  const scanDownloads = scan.downloads?.length || 0;
+  const scanInvalid = scan.invalidLinks?.length || 0;
+  if (scanErrors + scanDownloads + scanInvalid > 0) {
+    console.log(`Incidencias del escaneo: ${scanErrors + scanDownloads + scanInvalid}`);
+    if (scanErrors > 0) console.log(`  Errores de navegación: ${scanErrors}`);
+    if (scanDownloads > 0) console.log(`  Descargas omitidas: ${scanDownloads}`);
+    if (scanInvalid > 0) console.log(`  Enlaces inválidos: ${scanInvalid}`);
   }
   console.log('');
 

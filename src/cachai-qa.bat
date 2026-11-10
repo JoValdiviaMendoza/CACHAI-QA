@@ -251,13 +251,15 @@ if "%ENGINE%"=="cucumber" (
     call "node_modules\.bin\cucumber-js.cmd" --config cucumber.js --parallel %CUCUMBER_PARALLEL%
     set "BDD_EXIT=!ERRORLEVEL!"
     call node cli\report-cucumber.js
-    call node cli\report-defects.js cucumber
+    call node cli\report-defects.js cucumber --scan="scan-report\!TARGET_JSON!"
+    if errorlevel 1 echo [AVISO] No se genero el reporte de defectos: revisa el scan seleccionado.
     if not "!BDD_EXIT!"=="0" echo [AVISO] Algunos escenarios BDD fallaron. Revisa el reporte.
 )
 
 if "%ENGINE%"=="playwright" (
     call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS%
-    call node cli\report-defects.js playwright
+    call node cli\report-defects.js playwright --scan="scan-report\!TARGET_JSON!"
+    if errorlevel 1 echo [AVISO] No se genero el reporte de defectos: revisa el scan seleccionado.
 )
 
 if "%ENGINE%"=="both" (
@@ -272,7 +274,8 @@ if "%ENGINE%"=="both" (
     set "BDD_EXIT=!ERRORLEVEL!"
     call node cli\report-cucumber.js
     if not "!BDD_EXIT!"=="0" echo [AVISO] Algunos escenarios BDD fallaron. Revisa el reporte.
-    call node cli\report-defects.js both
+    call node cli\report-defects.js both --scan="scan-report\!TARGET_JSON!"
+    if errorlevel 1 echo [AVISO] No se genero el reporte consolidado: revisa el scan seleccionado.
 )
 
 echo.
