@@ -56,6 +56,12 @@ on:
         default: false
         type: boolean
 
+  # TEMPORAL: permite probar el workflow en esta rama antes del merge.
+  # Quitar este bloque después de validar la primera ejecución.
+  push:
+    branches:
+      - automation/github-actions
+
 # Ejemplo de ejecución programada (requiere configurar la variable CACHAI_TARGET_URL):
 # schedule:
 #   - cron: "0 6 * * 1"
@@ -104,10 +110,10 @@ jobs:
       - name: Ejecutar crawler
         run: >
           npx ts-node --transpile-only crawler.ts
-          --url="${{ inputs.target_url }}"
-          --type=${{ inputs.scan_type }}
-          --depth=${{ inputs.depth }}
-          --max-pages=${{ inputs.max_pages }}
+          --url="${{ inputs.target_url || 'https://scrapethissite.com/' }}"
+          --type=${{ inputs.scan_type || 'links' }}
+          --depth=${{ inputs.depth || '1' }}
+          --max-pages=${{ inputs.max_pages || '5' }}
           --concurrency=3
           --headless
           --output=scan-report/ci-scan.json
@@ -157,25 +163,25 @@ jobs:
         run: >
           npx ts-node --transpile-only cli/from-scan.ts
           --scan=scan-report/ci-scan.json
-          --browsers=${{ inputs.browsers }}
+          --browsers=${{ inputs.browsers || 'chromium' }}
           --workers=2
-          --max-links=${{ inputs.max_links }}
+          --max-links=${{ inputs.max_links || '5' }}
           --timeout=60000
           --no-prompt
           --no-open
 
       - name: Ejecutar Playwright
         id: playwright
-        if: inputs.engine != 'cucumber'
-        continue-on-error: ${{ !inputs.fail_on_defects }}
+        if: github.event_name == 'push' || inputs.engine != 'cucumber'
+        continue-on-error: ${{ inputs.fail_on_defects != true }}
         run: >
           npx playwright test
           --config=reports/generated-tests/playwright.config.ts
 
       - name: Ejecutar Cucumber
         id: cucumber
-        if: always() && inputs.engine != 'playwright'
-        continue-on-error: ${{ !inputs.fail_on_defects }}
+        if: always() && github.event_name != 'push' && inputs.engine != 'playwright'
+        continue-on-error: ${{ inputs.fail_on_defects != true }}
         env:
           CUCUMBER_PARALLEL: "2"
         run: npx cucumber-js --config cucumber.js
@@ -184,7 +190,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: >
-          node cli/report-defects.js "${{ inputs.engine }}"
+          node cli/report-defects.js "${{ inputs.engine || 'playwright' }}"
           --scan=scan-report/ci-scan.json
 
       - name: Publicar reportes
