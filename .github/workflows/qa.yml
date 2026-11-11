@@ -111,9 +111,9 @@ jobs:
         run: >
           npx ts-node --transpile-only crawler.ts
           --url="${{ inputs.target_url || 'https://scrapethissite.com/' }}"
-          --type=${{ inputs.scan_type || 'links' }}
-          --depth=${{ inputs.depth || '1' }}
-          --max-pages=${{ inputs.max_pages || '5' }}
+          --type=${{ inputs.scan_type || 'all' }}
+          --depth=${{ inputs.depth || '2' }}
+          --max-pages=${{ inputs.max_pages || '25' }}
           --concurrency=3
           --headless
           --output=scan-report/ci-scan.json
@@ -180,7 +180,7 @@ jobs:
 
       - name: Ejecutar Cucumber
         id: cucumber
-        if: always() && github.event_name != 'push' && inputs.engine != 'playwright'
+        if: always() && inputs.engine != 'playwright'
         continue-on-error: ${{ inputs.fail_on_defects != true }}
         env:
           CUCUMBER_PARALLEL: "2"
@@ -190,7 +190,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: >
-          node cli/report-defects.js "${{ inputs.engine || 'playwright' }}"
+          node cli/report-defects.js "${{ inputs.engine || 'both' }}"
           --scan=scan-report/ci-scan.json
 
       - name: Publicar reportes
@@ -202,9 +202,8 @@ jobs:
           retention-days: 14
           path: |
             src/scan-report/ci-scan.json
+            src/reports/*.json
             src/reports/playwright-report-*
-            src/reports/results.json
             src/reports/cucumber/**
             src/reports/defectos-*.md
-            src/reports/bdd-metrics.json
             src/reports/generated-tests/**
