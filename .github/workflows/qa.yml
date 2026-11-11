@@ -1,0 +1,204 @@
+name: CACHAI-QA QA Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: URL pública que se va a escanear y probar
+        required: true
+        type: string
+      max_pages:
+        description: Máximo de páginas a escanear
+        required: true
+        default: "25"
+        type: string
+      depth:
+        description: Profundidad máxima del crawler
+        required: true
+        default: "2"
+        type: string
+      scan_type:
+        description: Elementos que se van a extraer
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - links
+          - images
+          - forms
+          - buttons
+      engine:
+        description: Motor de ejecución
+        required: true
+        default: playwright
+        type: choice
+        options:
+          - playwright
+          - cucumber
+          - both
+      browsers:
+        description: Navegadores para Playwright
+        required: true
+        default: chromium
+        type: choice
+        options:
+          - chromium
+          - chromium,firefox
+      max_links:
+        description: Máximo de enlaces nuevos por página
+        required: true
+        default: "20"
+        type: string
+      fail_on_defects:
+        description: Fallar el job si las pruebas detectan defectos
+        required: true
+        default: false
+        type: boolean
+
+# Ejemplo de ejecución programada (requiere configurar la variable CACHAI_TARGET_URL):
+# schedule:
+#   - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cachai-qa-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: "true"
+  NODE_OPTIONS: "--max-old-space-size=4096"
+
+jobs:
+  scan:
+    name: Escanear URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: src
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar navegador del crawler
+        run: npx playwright install --with-deps chromium
+
+      - name: Validar TypeScript
+        run: npx tsc --noEmit
+
+      - name: Ejecutar crawler
+        run: >
+          npx ts-node --transpile-only crawler.ts
+          --url="${{ inputs.target_url }}"
+          --type=${{ inputs.scan_type }}
+          --depth=${{ inputs.depth }}
+          --max-pages=${{ inputs.max_pages }}
+          --concurrency=3
+          --headless
+          --output=scan-report/ci-scan.json
+
+      - name: Publicar scan JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan
+          path: src/scan-report/ci-scan.json
+          if-no-files-found: error
+          retention-days: 14
+
+  test:
+    name: Generar y ejecutar pruebas
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: src
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar navegadores
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Descargar scan del job anterior
+        uses: actions/download-artifact@v4
+        with:
+          name: scan
+          path: src/scan-report
+
+      - name: Generar pruebas desde el scan
+        run: >
+          npx ts-node --transpile-only cli/from-scan.ts
+          --scan=scan-report/ci-scan.json
+          --browsers=${{ inputs.browsers }}
+          --workers=2
+          --max-links=${{ inputs.max_links }}
+          --timeout=60000
+          --no-prompt
+          --no-open
+
+      - name: Ejecutar Playwright
+        id: playwright
+        if: inputs.engine != 'cucumber'
+        continue-on-error: ${{ !inputs.fail_on_defects }}
+        run: >
+          npx playwright test
+          --config=reports/generated-tests/playwright.config.ts
+
+      - name: Ejecutar Cucumber
+        id: cucumber
+        if: always() && inputs.engine != 'playwright'
+        continue-on-error: ${{ !inputs.fail_on_defects }}
+        env:
+          CUCUMBER_PARALLEL: "2"
+        run: npx cucumber-js --config cucumber.js
+
+      - name: Generar reporte de defectos
+        if: always()
+        continue-on-error: true
+        run: >
+          node cli/report-defects.js "${{ inputs.engine }}"
+          --scan=scan-report/ci-scan.json
+
+      - name: Publicar reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            src/scan-report/ci-scan.json
+            src/reports/playwright-report-*
+            src/reports/results.json
+            src/reports/cucumber/**
+            src/reports/defectos-*.md
+            src/reports/bdd-metrics.json
+            src/reports/generated-tests/**
