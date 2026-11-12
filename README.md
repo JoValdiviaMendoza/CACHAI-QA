@@ -6,88 +6,308 @@
 
 ## Descripción
 
-El proyecto denominado **CACHAI-QA** consiste en desarrollar un framework de automatización de pruebas innovador con un enfoque **"Plug & Play"** ("listo para usar"). Su objetivo principal es que el usuario solo tenga que ingresar la URL de una página web en un archivo de configuración. A partir de ahí, el sistema escanea automáticamente el sitio (identificando enlaces, imágenes y formularios) y genera pruebas genéricas para el Front-End. Estas pruebas verifican reglas universales de calidad, como la ausencia de enlaces rotos, la correcta carga de imágenes, errores de sistema ocultos y el funcionamiento de los botones principales, ejecutando escenarios descritos en lenguaje natural.
+**CACHAI-QA** es un framework de automatización de pruebas con enfoque **“Plug & Play”**. El usuario ingresa una URL y el sistema:
 
-**Nota:** este repositorio reúne la **documentación** del proyecto (Fase 1 y Fase 2). El código del framework se gestiona por separado y aún no está publicado, por lo que las instrucciones de ejecución de más abajo son **referenciales**.
+1. escanea el sitio;
+2. identifica enlaces, imágenes, formularios y botones;
+3. genera escenarios genéricos en lenguaje natural;
+4. ejecuta las pruebas con Playwright y/o Cucumber;
+5. entrega reportes HTML, JSON y Markdown, junto con un dashboard local.
+
+El objetivo es reducir la barrera de entrada a la automatización para PYMES, emprendedores, analistas QA y equipos que no tienen un área de QA dedicada.
+
+**Nota:** el repositorio reúne la documentación de Fase 1 y Fase 2, y el código del framework en `src/`. Las instrucciones de ejecución se aplican desde esa carpeta.
+
+## Estado actual
+
+CACHAI-QA se encuentra en un **MVP funcional local** y cuenta con un workflow de **GitHub Actions** para ejecución remota.
+
+| Área | Estado |
+|---|---|
+| Escaneo, generación y ejecución local | ✅ Operativo |
+| Playwright + Cucumber | ✅ Operativo |
+| Reportes HTML/JSON/Markdown | ✅ Operativo |
+| Dashboard local | ✅ Operativo |
+| Auditoría local desde el dashboard | ✅ Operativo |
+| GitHub Actions | ✅ Validado con ejecución en GitHub |
+| BrowserStack / Safari | 🟡 Estructura preparada, sin ejecución validada |
+| Informe final consolidado | 🟡 Pendiente |
+
+El repositorio se organiza en `Fase 1/`, `Fase 2/`, `src/` y este `README.md`. La configuración de CI vive en `.github/workflows/qa.yml`.
 
 ## Tecnologías Utilizadas
 
 ### Lenguajes de programación
 
-- **TypeScript** — Lenguaje principal estructurado y tipado, utilizado para desarrollar la lógica del framework, los algoritmos de escaneo y la redacción de las aserciones.
-- **Node.js** — Entorno de ejecución necesario para compilar TypeScript y ejecutar el framework y sus herramientas.
+- **TypeScript** — Lógica del crawler, generación de pruebas, tipado y utilidades del framework.
+- **Node.js 22+** — Entorno de ejecución del framework, Playwright, Cucumber y el dashboard.
 
 ### Frameworks y librerías
 
-- **Playwright** — Framework central de automatización empleado para controlar los navegadores, realizar el escaneo automático del Front-End, interceptar elementos dinámicos y ejecutar las pruebas de manera ágil.
-- **Gherkin / BDD** — Redacción de los escenarios de prueba en lenguaje natural.
-- **Page Object Model (POM)** — Patrón de diseño para la organización y reutilización de los componentes de prueba.
+- **Playwright** — Navegación, escaneo del DOM y ejecución de pruebas en navegadores.
+- **Gherkin / BDD** — Escenarios en lenguaje natural.
+- **Cucumber** — Ejecución de los escenarios BDD y generación de reportes.
+- **Page Object Model (POM)** — Patrón de referencia. **Estado:** el flujo actual genera un spec único con `test.describe` por página y helpers; no existe una capa formal de Page Objects. Se considera una mejora futura, no un requisito del MVP.
 
 ### Cloud / Infraestructura
 
-- **BrowserStack** — Plataforma en la nube prevista para ejecutar y centralizar las revisiones de forma remota en distintos navegadores, generando un panel visual de reportes y grabaciones en video. *(Integración planificada para la etapa de estabilización; aún no implementada.)*
+- **GitHub Actions** — Workflow manual de escaneo, generación, ejecución y publicación de artefactos.
+- **BrowserStack** — Integración prevista para ejecución cloud y Safari. **Estado:** estructura/configuración preparada; ejecución end-to-end pendiente de credenciales y validación.
 
 ### Navegadores objetivo de prueba
 
-- **Chromium** — Navegador utilizado actualmente para la ejecución local de las pruebas.
-- **Google Chrome**, **Mozilla Firefox** y **Apple Safari** — Objetivo de validación cross-browser, planificado mediante BrowserStack.
+- **Chromium**, **Google Chrome** y **Mozilla Firefox** — ejecución local configurada.
+- **Apple Safari** — validación pendiente mediante BrowserStack.
 
-> Nota: Firefox no puede ejecutarse localmente debido a una política de seguridad de Windows, por lo que en la práctica se utiliza **Chromium** como navegador alternativo.
+> Chrome utiliza el navegador instalado en el sistema. Si no está disponible, se puede ejecutar solo con Chromium y Firefox mediante `--browsers=chromium,firefox`.
 
 ## Instrucciones para Ejecutar el Proyecto Localmente
 
 ### Requisitos previos
 
-- Instalación de **Node.js** (entorno de ejecución necesario para compilar TypeScript y ejecutar Playwright).
-- Gestor de paquetes de Node instalado (por ejemplo, `npm`, `yarn` o `pnpm`).
-- Para la ejecución **local** con Chromium **no se requieren credenciales externas**. Las credenciales de **BrowserStack** solo son necesarias para la ejecución **en la nube** (etapa final, planificada).
+Para el usuario final:
 
-### Instalación
+- Windows 10/11.
+- Conexión a Internet.
+- No necesita saber programar ni usar comandos: el flujo principal es el menú `cachai-qa.bat`.
 
-1. Clonar el repositorio del proyecto en el entorno local.
-2. Abrir la terminal en la raíz del proyecto y ejecutar el comando de instalación de dependencias (`npm install`) para descargar las librerías necesarias de TypeScript y Playwright.
-3. Instalar el navegador que utiliza Playwright: `npx playwright install chromium`.
+Para el flujo técnico:
+
+- **Node.js 22+**.
+- `npm`, `pnpm` o `yarn`.
+- Git/Git Bash solo si se clona el repositorio.
+- Para GitHub Actions se necesita un token de GitHub.
+- Para BrowserStack se necesitan credenciales de la cuenta.
+
+### Instalación para usuario final
+
+1. Entrar al repositorio en GitHub.
+2. Presionar **Code → Download ZIP**.
+3. Descomprimir el archivo.
+4. Abrir la carpeta `src`.
+5. Hacer doble clic en `cachai-qa.bat`.
+6. Elegir la opción **[8] Verificar / Instalar dependencias**.
+7. Elegir la opción **[7] Configurar .env** e ingresar la URL.
+8. Volver al menú y usar:
+   - **[1] Scan rápido**;
+   - **[2] Scan completo**;
+   - **[3] Scan personalizado**;
+   - **[4] Generar / Ejecutar tests**;
+   - **[5] Panel web**.
+
+La opción **[8]** instala o verifica Node.js, dependencias, Playwright y Cucumber. No es necesario ejecutar `npm ci` manualmente.
+
+### Instalación con Git Bash
+
+Si el usuario prefiere clonar:
+
+```bash
+git clone https://github.com/JoValdiviaMendoza/CACHAI-QA.git
+cd CACHAI-QA/src
+```
+
+Luego abrir el menú:
+
+```bash
+./cachai-qa.bat
+```
+
+Si Git Bash no ejecuta el `.bat` directamente:
+
+```bash
+cmd //c cachai-qa.bat
+```
+
+Después usar la opción **[8]** para instalar dependencias y la opción **[7]** para configurar `.env`.
+
+### Instalación avanzada para desarrolladores
+
+Solo si se necesita trabajar desde la CLI:
+
+```bash
+cd src
+npm ci
+npx playwright install chromium firefox
+```
+
+Chrome utiliza la instalación del sistema.
 
 ### Configuración
 
-1. Crear o modificar el archivo de configuración inicial del framework (por ejemplo, un archivo `.env` o `config.ts`).
-2. Ingresar obligatoriamente la URL exacta de la página web que se desea escanear y evaluar (`TARGET_URL`).
-3. Para la ejecución en la nube, ingresar las credenciales correspondientes a la cuenta de **BrowserStack** (`BROWSERSTACK_USERNAME` y `BROWSERSTACK_ACCESS_KEY`).
+La forma recomendada para el usuario final es la opción **[7] Configurar .env** del menú.
+
+También se puede editar manualmente `src/.env`.
+
+Variables mínimas:
+
+```env
+TARGET_URL=https://ejemplo.com
+CRAWL_DEPTH=1
+MAX_PAGES=50
+HEADLESS=true
+```
+
+Variables opcionales para GitHub Actions:
+
+```env
+GITHUB_REPO=JoValdiviaMendoza/CACHAI-QA
+GITHUB_TOKEN=github_pat_...
+GITHUB_WORKFLOW=qa.yml
+GITHUB_CI_REF=main
+GITHUB_CI_AUTO_IMPORT=true
+```
+
+Variables opcionales para BrowserStack:
+
+```env
+BROWSERSTACK_USERNAME=...
+BROWSERSTACK_ACCESS_KEY=...
+BROWSERSTACK_PROJECT_NAME=CACHAI-QA
+```
 
 ### Ejecución
 
-1. Ejecutar el comando principal de inicio de pruebas por consola (por ejemplo, `npx playwright test` o un script personalizado).
-2. El framework abrirá la dirección web configurada y realizará un escaneo automático de sus elementos principales (enlaces, imágenes, áreas interactivas).
-3. El sistema generará los escenarios genéricos y los ejecutará de forma local con Chromium (y, en la etapa final, de forma remota en la nube mediante **BrowserStack**).
+#### Camino recomendado para usuario final
+
+```text
+Abrir src/cachai-qa.bat
+→ [8] instalar dependencias
+→ [7] configurar URL en .env
+→ [1], [2] o [3] para escanear
+→ [4] para generar/ejecutar pruebas
+→ [5] para abrir el dashboard
+```
+
+No se requieren comandos ni conocimientos de programación.
+
+#### Opción 1: menú local
+
+Abrir:
+
+```text
+src/cachai-qa.bat
+```
+
+Opciones principales:
+
+1. Scan rápido
+2. Scan completo
+3. Scan personalizado
+4. Generar/ejecutar tests
+5. Panel web
+6. Página de demostración
+7. Configurar `.env`
+8. Verificar/instalar dependencias
+
+#### Opción 2: CLI
+
+Escanear:
+
+```bash
+npx ts-node crawler.ts --url=https://ejemplo.com --type=all --depth=2 --max-pages=50
+```
+
+Generar y ejecutar Playwright:
+
+```bash
+npx ts-node cli/from-scan.ts --scan=scan-report/archivo.json --run
+```
+
+Ejecutar Cucumber:
+
+```bash
+npx cucumber-js --config cucumber.js
+```
+
+Generar reporte de defectos:
+
+```bash
+node cli/report-defects.js both --scan=scan-report/archivo.json
+```
+
+#### Opción 3: auditoría local desde el dashboard
+
+En **Escaneos** existe un formulario para ingresar una URL y ejecutar:
+
+- crawler rápido, completo o personalizado;
+- generación de pruebas;
+- Playwright;
+- Cucumber;
+- reportes.
+
+Incluye estado en vivo, log y botón **Cancelar**.
+
+#### Opción 4: GitHub Actions
+
+El workflow está en:
+
+```text
+.github/workflows/qa.yml
+```
+
+Se ejecuta manualmente desde **Actions → CACHAI-QA QA Pipeline**. Permite configurar URL, elementos, profundidad, páginas, motor y navegadores. Publica `scan` y `reports` como artefactos.
+
+El dashboard incluye una pestaña **GitHub Actions** para:
+
+- configurar los inputs del workflow;
+- listar ejecuciones;
+- ejecutar el workflow remotamente;
+- importar la última corrida;
+- revisar los errores del reporte importado.
+
+> El workflow debe estar en `main` para que `workflow_dispatch` esté disponible. El dashboard requiere `GITHUB_TOKEN`.
 
 ### Acceso a resultados
 
-1. Una vez finalizado el proceso, el **panel web local** del framework muestra el resumen de los escaneos y los resultados de las pruebas (aprobadas/rechazadas) junto con el registro de errores.
-2. En la etapa cloud (planificada), el sistema entregará además un enlace hacia el panel visual de **BrowserStack** para revisar el reporte detallado con los videos de las revisiones.
+- Reporte HTML de Playwright: `reports/playwright-report-*/index.html`.
+- Reporte HTML/JSON de Cucumber: `reports/cucumber/`.
+- Métricas Playwright: `reports/results.json`.
+- Métricas BDD: `reports/bdd-metrics.json`.
+- Defectos: `reports/defectos-<host>-<fecha>.md`.
+- Scans: `scan-report/`.
+
+El dashboard local muestra:
+
+- **Inicio:** salud general y errores.
+- **Escaneos:** rápidos, completos, personalizados, automatizados y favoritos.
+- **Ejecuciones:** historial Playwright/Cucumber y detalle de errores.
+- **GitHub Actions:** ejecuciones remotas, importación y errores del último reporte.
+
+Los scans locales se nombran como:
+
+```text
+<host>-<modo>-<fecha>.json
+```
+
+Los scans importados desde GitHub Actions:
+
+```text
+github-actions-<host>-<runId>.json
+```
 
 ## Integrantes del Equipo
 
 | Nombre | Rol |
 |---|---|
 | Alex Puebla | Analista QA - Líder de estrategias de pruebas |
-| José Valdivia | Ingeniero Analista QA - Líder infraestructura en la nube |
+| José Valdivia | Ingeniero Analista QA - Líder de infraestructura en la nube |
 
 ## Metodología de Trabajo del Equipo
 
 El equipo gestiona el desarrollo del proyecto utilizando el framework ágil **Scrum**, adaptado a las necesidades académicas y técnicas del Capstone. Las principales prácticas implementadas son:
 
-- **Gestión del Backlog**: Los requerimientos se estructuran mediante Épicas (ej. Configuración Inicial, Escaneo Automático) que se desglosan en Historias de Usuario escritas en lenguaje natural ("Como... quiero... para...").
-- **Definición de Terminado (DoD)**: Cada historia cuenta con Criterios de Aceptación claros (negocio y técnicos) que deben cumplirse para ser considerada finalizada.
-- **Estimación**: Se utiliza la ceremonia de *Poker Planning* para dimensionar el esfuerzo técnico de cada Épica, cuantificándolo en Puntos de Función (PF).
-- **Iteraciones**: El ciclo de vida del desarrollo se divide en un plan de trabajo iterativo e incremental, con el desarrollo concentrado entre las semanas 5 y 14 del semestre.
-- **Control de versiones**: Se utiliza Git/GitHub como fuente única de verdad del código y de la documentación, con revisión por pares.
+- **Gestión del Backlog:** los requerimientos se estructuran mediante épicas que se desglosan en Historias de Usuario escritas en lenguaje natural.
+- **Definición de Terminado (DoD):** cada historia cuenta con criterios de aceptación de negocio y técnicos.
+- **Estimación:** se utiliza *Poker Planning* para dimensionar el esfuerzo técnico.
+- **Iteraciones:** el desarrollo se organiza de forma iterativa e incremental.
+- **Control de versiones:** Git/GitHub como fuente única de verdad del código y la documentación, con revisión por pares.
 
 ## Arquitectura de la Solución
 
-La arquitectura se compone de los siguientes módulos interconectados:
-
-1. **Módulo de Configuración local**: Archivo o script inicial donde el usuario proporciona la URL a evaluar y, en la etapa cloud, las credenciales de acceso.
-2. **Motor de Escaneo (Playwright Scraper)**: Componente basado en Playwright que lanza un navegador (headless o con interfaz), navega a la URL objetivo, identifica el árbol de elementos (DOM) y almacena enlaces, imágenes y formularios temporalmente.
-3. **Generador de Pruebas (TypeScript + Core)**: Motor lógico desarrollado en TypeScript que toma los elementos recolectados y genera dinámicamente aserciones basadas en reglas de negocio universales (lenguaje natural/BDD).
-4. **Integración Cloud (Playwright to BrowserStack)**: Módulo de conexión que delega la ejecución de las pruebas a la nube de BrowserStack, permitiendo testing cruzado en Chrome, Firefox y Safari sin consumir recursos locales del usuario. *(Planificado.)*
-5. **Dashboard Visual de Reportes**: Entorno final que recopila los resultados, logs y videos de las pruebas, presentando el estado de salud de la URL en una interfaz amigable. *(Hoy implementado como panel web local; se complementará con el panel de BrowserStack en la etapa final.)*
+1. **Configuración local:** `.env`, validación de URL y perfiles de ejecución.
+2. **Motor de escaneo:** crawler basado en Playwright que extrae enlaces, imágenes, formularios y botones.
+3. **Generador de pruebas:** convierte el scan JSON en un spec de Playwright y escenarios Gherkin/Cucumber.
+4. **Ejecución local:** Playwright en Chromium/Chrome/Firefox y Cucumber en Chromium.
+5. **Integración cloud:** adaptador BrowserStack para ejecución remota y Safari. *Pendiente de validación.*
+6. **Reportes y dashboard:** consolida resultados, errores y defectos en HTML, JSON, Markdown y panel local.
+7. **CI/CD:** workflow de GitHub Actions con jobs de escaneo, pruebas y publicación de artefactos.
