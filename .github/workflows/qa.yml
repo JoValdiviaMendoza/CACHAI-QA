@@ -10,12 +10,12 @@ on:
       max_pages:
         description: Máximo de páginas a escanear
         required: true
-        default: "25"
+        default: "999999"
         type: string
       depth:
         description: Profundidad máxima del crawler
         required: true
-        default: "2"
+        default: "999"
         type: string
       scan_type:
         description: Elementos que se van a extraer
@@ -31,7 +31,7 @@ on:
       engine:
         description: Motor de ejecución
         required: true
-        default: playwright
+        default: both
         type: choice
         options:
           - playwright
@@ -48,19 +48,13 @@ on:
       max_links:
         description: Máximo de enlaces nuevos por página
         required: true
-        default: "20"
+        default: "40"
         type: string
       fail_on_defects:
         description: Fallar el job si las pruebas detectan defectos
         required: true
         default: false
         type: boolean
-
-  # TEMPORAL: permite probar el workflow en esta rama antes del merge.
-  # Quitar este bloque después de validar la primera ejecución.
-  push:
-    branches:
-      - automation/github-actions
 
 # Ejemplo de ejecución programada (requiere configurar la variable CACHAI_TARGET_URL):
 # schedule:
@@ -81,7 +75,7 @@ jobs:
   scan:
     name: Escanear URL
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 120
 
     defaults:
       run:
@@ -112,8 +106,8 @@ jobs:
           npx ts-node --transpile-only crawler.ts
           --url="${{ inputs.target_url || 'https://scrapethissite.com/' }}"
           --type=${{ inputs.scan_type || 'all' }}
-          --depth=${{ inputs.depth || '2' }}
-          --max-pages=${{ inputs.max_pages || '25' }}
+          --depth=${{ inputs.depth || '999' }}
+          --max-pages=${{ inputs.max_pages || '999999' }}
           --concurrency=3
           --headless
           --output=scan-report/ci-scan.json
@@ -130,7 +124,7 @@ jobs:
     name: Generar y ejecutar pruebas
     needs: scan
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
 
     defaults:
       run:
