@@ -18,9 +18,22 @@ const state = {
   homeShowAll: false,
   aboutTab: 'how',
   scanFavorites: [],
+  scanJob: null,
   selectedRun: { playwright: null, cucumber: null },
   runDetail: { playwright: null, cucumber: null },
-  runDetailLoading: { playwright: false, cucumber: false }
+  runDetailLoading: { playwright: false, cucumber: false },
+  ci: {
+    config: null,
+    runs: [],
+    scan: null,
+    errors: [],
+    errorReportLoading: false,
+    loading: false,
+    importing: false,
+    dispatching: false,
+    error: '',
+    autoImporting: false
+  }
 };
 
 try {
@@ -49,7 +62,65 @@ const I18N = {
     'tabs.home': 'Inicio',
     'tabs.scans': 'Escaneos',
     'tabs.runs': 'Ejecuciones',
+    'tabs.ci': 'GitHub Actions',
     'tabs.about': '¿Qué es CACHAI-QA?',
+    'ci.title': 'GitHub Actions',
+    'ci.warning': 'Esta sección requiere conocimientos de Git, GitHub Actions y tokens de acceso. Úsala con cuidado: una ejecución full puede tardar y consumir recursos del sitio o de tu cuenta.',
+    'ci.refresh': 'Actualizar',
+    'ci.import': 'Importar última',
+    'ci.importing': 'Importando…',
+    'ci.config.title': 'Configuración pendiente',
+    'ci.config.text': 'Para importar ejecuciones automáticamente, configura el repositorio y un token de GitHub con permiso de lectura sobre Actions.',
+    'ci.config.help': 'Agrega estas variables a src/.env y reinicia el dashboard.',
+    'ci.runs.title': 'Ejecuciones recientes',
+    'ci.scan.title': 'Scan importado',
+    'ci.scan.empty': 'Todavía no hay un scan importado.',
+    'ci.scan.pages': 'Páginas',
+    'ci.scan.onePage': '1 página',
+    'ci.scan.pagesCount': '{n} páginas',
+    'ci.scan.links': 'Enlaces',
+    'ci.scan.type': 'Tipo',
+    'ci.scan.depth': 'Profundidad',
+    'ci.scan.date': 'Fecha',
+    'ci.scan.downloads': 'Descargas omitidas',
+    'ci.scan.invalid': 'Enlaces inválidos',
+    'ci.scan.view': 'Ver escaneo',
+    'ci.errors.title': 'Errores del reporte importado',
+    'ci.errors.empty': 'El reporte importado no registró errores.',
+    'ci.help': 'Importa una ejecución para que sus escaneos y reportes aparezcan en Inicio, Escaneos y Ejecuciones.',
+    'ci.empty': 'No hay ejecuciones recientes.',
+    'ci.last.title': 'Última importación',
+    'ci.last.none': 'Todavía no has importado ninguna ejecución.',
+    'ci.last.text': 'Ejecución #{id} · {date}',
+    'ci.status.success': 'Exitosa',
+    'ci.status.failure': 'Fallida',
+    'ci.status.cancelled': 'Cancelada',
+    'ci.status.inProgress': 'En curso',
+    'ci.status.queued': 'En cola',
+    'ci.import.run': 'Importar',
+    'ci.imported': 'Importada',
+    'ci.import.ok': 'Ejecución importada. Actualizando el panel…',
+    'ci.import.error': 'No se pudo importar la ejecución.',
+    'ci.run.placeholder': 'https://ejemplo.com',
+    'ci.run.start': 'Ejecutar en GitHub Actions',
+    'ci.run.dispatching': 'Enviando ejecución…',
+    'ci.run.sent': 'Ejecución enviada. Esperando a que aparezca en GitHub…',
+    'ci.run.waiting': 'Esperando ejecución en GitHub Actions…',
+    'ci.run.error': 'No se pudo iniciar la ejecución en GitHub Actions.',
+    'ci.run.done': 'Ejecución remota completada.',
+    'ci.run.config': 'Configuración del workflow',
+    'ci.run.config.help': 'Estos valores se envían al workflow; no modifican el archivo YAML.',
+    'ci.run.scanType': 'Elementos',
+    'ci.run.depth': 'Profundidad',
+    'ci.run.maxPages': 'Máx. páginas',
+    'ci.run.engine': 'Motor',
+    'ci.run.browsers': 'Navegadores',
+    'ci.run.maxLinks': 'Enlaces por página',
+    'ci.auto': 'Importación automática activa',
+    'ci.manual': 'Importación manual',
+    'ci.open': 'Abrir en GitHub',
+    'ci.branch': 'Rama',
+    'ci.noConfig': 'Falta configuración de GitHub Actions.',
     'about.title': '¿Qué hace CACHAI-QA?',
     'about.tab.how': 'Cómo funciona',
     'about.tab.glossary': 'Glosario',
@@ -80,9 +151,34 @@ const I18N = {
     'home.source.scan': 'Escaneo',
     'scans.title': 'Escaneos guardados',
     'scans.empty': 'No hay escaneos en esta categoría.',
+    'scans.create.title': 'Nueva auditoría local completa',
+    'scans.create.help': 'Ingresa una URL. Se ejecuta crawler, generación, Playwright, Cucumber y reportes.',
+    'scans.create.placeholder': 'https://ejemplo.com',
+    'scans.create.start': 'Ejecutar auditoría',
+    'scans.create.cancel': 'Cancelar',
+    'scans.create.mode': 'Tipo de escaneo',
+    'scans.create.type': 'Elementos',
+    'scans.create.type.all': 'Todos',
+    'scans.create.type.links': 'Enlaces',
+    'scans.create.type.images': 'Imágenes',
+    'scans.create.type.forms': 'Formularios',
+    'scans.create.type.buttons': 'Botones',
+    'scans.create.depth': 'Profundidad',
+    'scans.create.maxPages': 'Máx. páginas',
+    'scans.create.running': 'Auditoría en curso…',
+    'scans.create.doneBadge': 'Completada',
+    'scans.create.failedBadge': 'Error',
+    'scans.create.cancelledBadge': 'Cancelada',
+    'scans.create.testsFailedBadge': 'Con fallos',
+    'scans.create.invalid': 'Ingresa una URL HTTP o HTTPS válida.',
+    'scans.create.done': 'Auditoría completada. Actualizando el panel…',
+    'scans.create.testsFailed': 'Auditoría completada con fallos de prueba. Revisa Ejecuciones.',
+    'scans.create.cancelled': 'Auditoría cancelada.',
+    'scans.create.failed': 'La auditoría terminó con errores.',
     'scans.filter.quick': '⚡ Rápido',
     'scans.filter.full': '🌐 Completo',
     'scans.filter.custom': '🎯 Personalizado',
+    'scans.filter.automated': '🤖 Automatizados',
     'scans.filter.favorites': '⭐ Guardados',
     'scans.emptyFavorites': 'Todavía no marcaste ningún escaneo como guardado. Usa la estrella de una tarjeta.',
     'scans.favorite.add': 'Guardar escaneo',
@@ -220,7 +316,65 @@ const I18N = {
     'tabs.home': 'Home',
     'tabs.scans': 'Scans',
     'tabs.runs': 'Runs',
+    'tabs.ci': 'GitHub Actions',
     'tabs.about': 'What is CACHAI-QA?',
+    'ci.title': 'GitHub Actions',
+    'ci.warning': 'This section requires knowledge of Git, GitHub Actions and access tokens. Use it carefully: a full run may take time and consume site or account resources.',
+    'ci.refresh': 'Refresh',
+    'ci.import': 'Import latest',
+    'ci.importing': 'Importing…',
+    'ci.config.title': 'Configuration required',
+    'ci.config.text': 'To import runs automatically, configure the repository and a GitHub token with read access to Actions.',
+    'ci.config.help': 'Add these variables to src/.env and restart the dashboard.',
+    'ci.runs.title': 'Recent runs',
+    'ci.scan.title': 'Imported scan',
+    'ci.scan.empty': 'No scan has been imported yet.',
+    'ci.scan.pages': 'Pages',
+    'ci.scan.onePage': '1 page',
+    'ci.scan.pagesCount': '{n} pages',
+    'ci.scan.links': 'Links',
+    'ci.scan.type': 'Type',
+    'ci.scan.depth': 'Depth',
+    'ci.scan.date': 'Date',
+    'ci.scan.downloads': 'Skipped downloads',
+    'ci.scan.invalid': 'Invalid links',
+    'ci.scan.view': 'View scan',
+    'ci.errors.title': 'Errors from imported report',
+    'ci.errors.empty': 'The imported report did not record errors.',
+    'ci.help': 'Import a run so its scans and reports appear in Home, Scans and Runs.',
+    'ci.empty': 'No recent runs.',
+    'ci.last.title': 'Last import',
+    'ci.last.none': 'You have not imported a run yet.',
+    'ci.last.text': 'Run #{id} · {date}',
+    'ci.status.success': 'Success',
+    'ci.status.failure': 'Failure',
+    'ci.status.cancelled': 'Cancelled',
+    'ci.status.inProgress': 'In progress',
+    'ci.status.queued': 'Queued',
+    'ci.import.run': 'Import',
+    'ci.imported': 'Imported',
+    'ci.import.ok': 'Run imported. Refreshing the dashboard…',
+    'ci.import.error': 'Could not import the run.',
+    'ci.run.placeholder': 'https://example.com',
+    'ci.run.start': 'Run on GitHub Actions',
+    'ci.run.dispatching': 'Dispatching run…',
+    'ci.run.sent': 'Run dispatched. Waiting for it to appear on GitHub…',
+    'ci.run.waiting': 'Waiting for the GitHub Actions run…',
+    'ci.run.error': 'Could not start the GitHub Actions run.',
+    'ci.run.done': 'Remote run completed.',
+    'ci.run.config': 'Workflow configuration',
+    'ci.run.config.help': 'These values are sent to the workflow; they do not modify the YAML file.',
+    'ci.run.scanType': 'Elements',
+    'ci.run.depth': 'Depth',
+    'ci.run.maxPages': 'Max pages',
+    'ci.run.engine': 'Engine',
+    'ci.run.browsers': 'Browsers',
+    'ci.run.maxLinks': 'Links per page',
+    'ci.auto': 'Automatic import enabled',
+    'ci.manual': 'Manual import',
+    'ci.open': 'Open on GitHub',
+    'ci.branch': 'Branch',
+    'ci.noConfig': 'GitHub Actions configuration is missing.',
     'about.title': 'What does CACHAI-QA do?',
     'about.tab.how': 'How it works',
     'about.tab.glossary': 'Glossary',
@@ -251,9 +405,34 @@ const I18N = {
     'home.source.scan': 'Scan',
     'scans.title': 'Saved scans',
     'scans.empty': 'No scans in this category.',
+    'scans.create.title': 'New full local audit',
+    'scans.create.help': 'Enter a URL. Runs the crawler, test generation, Playwright, Cucumber and reports.',
+    'scans.create.placeholder': 'https://example.com',
+    'scans.create.start': 'Run audit',
+    'scans.create.cancel': 'Cancel',
+    'scans.create.mode': 'Scan type',
+    'scans.create.type': 'Elements',
+    'scans.create.type.all': 'All',
+    'scans.create.type.links': 'Links',
+    'scans.create.type.images': 'Images',
+    'scans.create.type.forms': 'Forms',
+    'scans.create.type.buttons': 'Buttons',
+    'scans.create.depth': 'Depth',
+    'scans.create.maxPages': 'Max pages',
+    'scans.create.running': 'Audit in progress…',
+    'scans.create.doneBadge': 'Completed',
+    'scans.create.failedBadge': 'Error',
+    'scans.create.cancelledBadge': 'Cancelled',
+    'scans.create.testsFailedBadge': 'With failures',
+    'scans.create.invalid': 'Enter a valid HTTP or HTTPS URL.',
+    'scans.create.done': 'Audit completed. Refreshing the dashboard…',
+    'scans.create.testsFailed': 'Audit completed with test failures. Check Runs.',
+    'scans.create.cancelled': 'Audit cancelled.',
+    'scans.create.failed': 'The audit finished with errors.',
     'scans.filter.quick': '⚡ Quick',
     'scans.filter.full': '🌐 Full',
     'scans.filter.custom': '🎯 Custom',
+    'scans.filter.automated': '🤖 Automated',
     'scans.filter.favorites': '⭐ Saved',
     'scans.emptyFavorites': 'You have not starred any scan yet. Use the star on a card.',
     'scans.favorite.add': 'Save scan',
@@ -638,6 +817,7 @@ function applyLang() {
   renderScans();
   renderTests();
   renderRuns();
+  renderCi();
   renderAbout();
 }
 
@@ -958,7 +1138,162 @@ function kindLabel(kind) {
 function scanTypeLabel(type) {
   if (type === 'quick') return t('scans.filter.quick');
   if (type === 'full') return t('scans.filter.full');
+  if (type === 'automated') return t('scans.filter.automated');
   return t('scans.filter.custom');
+}
+
+let scanPollTimer = null;
+
+function renderScanJob() {
+  const status = $('#scan-job-status');
+  const badge = $('#scan-job-badge');
+  const log = $('#scan-job-log');
+  const button = $('#scan-start');
+  const job = state.scanJob;
+  if (!status || !badge || !log || !button) return;
+
+  if (!job) {
+    status.textContent = '';
+    badge.textContent = '';
+    log.hidden = true;
+    button.disabled = false;
+    const cancel = $('#scan-cancel');
+    if (cancel) cancel.hidden = true;
+    return;
+  }
+
+  button.disabled = Boolean(job.running);
+  const cancelButton = $('#scan-cancel');
+  if (cancelButton) cancelButton.hidden = !job.running;
+  badge.textContent = job.running
+    ? t('scans.create.running')
+    : job.cancelled
+      ? t('scans.create.cancelledBadge')
+      : job.testsFailed
+        ? t('scans.create.testsFailedBadge')
+        : job.exitCode === 0
+          ? t('scans.create.doneBadge')
+          : t('scans.create.failedBadge');
+
+  if (job.running) {
+    status.textContent = `${t('scans.create.running')} ${job.url || ''}${job.stage ? ' · ' + job.stage : ''}`.trim();
+  } else if (job.cancelled) {
+    status.textContent = t('scans.create.cancelled');
+  } else if (job.error) {
+    status.textContent = job.error;
+  } else if (job.testsFailed) {
+    status.textContent = t('scans.create.testsFailed');
+  } else {
+    status.textContent = job.exitCode === 0 ? t('scans.create.done') : t('scans.create.failed');
+  }
+
+  const lines = Array.isArray(job.log) ? job.log : [];
+  log.textContent = lines.join('\n');
+  log.hidden = lines.length === 0;
+}
+
+async function handleScanFinished(job) {
+  if (job.cancelled) {
+    toast(t('scans.create.cancelled'));
+    await loadScans();
+    return;
+  }
+  if (job.exitCode === 0) {
+    toast(job.testsFailed ? t('scans.create.testsFailed') : t('scans.create.done'), Boolean(job.testsFailed));
+    state.scanFilter = job.mode && ['quick', 'full', 'custom'].includes(job.mode) ? job.mode : 'full';
+    await Promise.all([loadScans(), loadTests(), loadRuns(), loadOverview()]);
+  } else {
+    toast(job.error || t('scans.create.failed'), true);
+  }
+}
+
+async function pollScanJob() {
+  clearTimeout(scanPollTimer);
+  scanPollTimer = null;
+  try {
+    const res = await fetch('/api/audit/status');
+    const job = await res.json();
+    const wasRunning = Boolean(state.scanJob && state.scanJob.running);
+    state.scanJob = job;
+    renderScanJob();
+    if (job.running) {
+      scanPollTimer = setTimeout(pollScanJob, 1500);
+    } else if (wasRunning) {
+      await handleScanFinished(job);
+    }
+  } catch (e) {
+    toast(String(e && e.message ? e.message : e), true);
+  }
+}
+
+async function loadScanJob() {
+  try {
+    const res = await fetch('/api/audit/status');
+    state.scanJob = await res.json();
+    renderScanJob();
+    if (state.scanJob && state.scanJob.running) {
+      clearTimeout(scanPollTimer);
+      scanPollTimer = setTimeout(pollScanJob, 1500);
+    }
+  } catch {
+    renderScanJob();
+  }
+}
+
+function syncScanMode() {
+  const mode = ($('#scan-mode') && $('#scan-mode').value) || 'full';
+  const custom = $('#scan-custom');
+  if (custom) custom.hidden = mode !== 'custom';
+}
+
+async function startScan() {
+  const input = $('#scan-url');
+  const url = input ? input.value.trim() : '';
+  if (!/^https?:\/\/[^\s]+$/i.test(url)) {
+    toast(t('scans.create.invalid'), true);
+    return;
+  }
+
+  const mode = ($('#scan-mode') && $('#scan-mode').value) || 'full';
+  const customType = ($('#scan-custom-type') && $('#scan-custom-type').value) || 'all';
+  const customDepth = Number($('#scan-depth') && $('#scan-depth').value);
+  const customPages = Number($('#scan-max-pages') && $('#scan-max-pages').value);
+
+  const button = $('#scan-start');
+  if (button) button.disabled = true;
+  try {
+    const res = await fetch('/api/audit/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        mode,
+        scanType: customType,
+        depth: customDepth,
+        maxPages: customPages
+      })
+    });
+    const job = await res.json();
+    if (!res.ok) throw new Error(job.error || t('scans.create.failed'));
+    state.scanJob = job;
+    renderScanJob();
+    scanPollTimer = setTimeout(pollScanJob, 1000);
+  } catch (e) {
+    if (button) button.disabled = false;
+    toast(String(e && e.message ? e.message : e), true);
+  }
+}
+
+async function cancelScan() {
+  try {
+    const res = await fetch('/api/audit/cancel', { method: 'POST' });
+    const job = await res.json();
+    if (!res.ok) throw new Error(job.error || t('scans.create.failed'));
+    state.scanJob = job;
+    renderScanJob();
+  } catch (e) {
+    toast(String(e && e.message ? e.message : e), true);
+  }
 }
 
 function renderScans() {
@@ -969,7 +1304,7 @@ function renderScans() {
   const scans = state.scans || [];
   $('#scans-count').textContent = num(scans.length);
 
-  for (const type of ['quick', 'full', 'custom']) {
+  for (const type of ['quick', 'full', 'custom', 'automated']) {
     const count = scans.filter((scan) => (scan.scanType || 'custom') === type).length;
     $$(`[data-scan-count="${type}"]`).forEach((el) => { el.textContent = num(count); });
   }
@@ -1828,6 +2163,407 @@ function setAboutTab(name) {
 }
 
 /* ------------------------------------------------------------------ *
+ * GitHub Actions
+ * ------------------------------------------------------------------ */
+
+function ciStatusValue(run) {
+  return String((run && (run.conclusion || run.status)) || '');
+}
+
+function ciStatusLabel(run) {
+  const value = ciStatusValue(run);
+  if (value === 'success') return t('ci.status.success');
+  if (value === 'failure') return t('ci.status.failure');
+  if (value === 'cancelled') return t('ci.status.cancelled');
+  if (value === 'in_progress') return t('ci.status.inProgress');
+  if (value === 'queued') return t('ci.status.queued');
+  return value || '—';
+}
+
+function ciStatusClass(run) {
+  const value = ciStatusValue(run);
+  if (value === 'success') return 'success';
+  if (value === 'failure') return 'failure';
+  if (value === 'cancelled') return 'cancelled';
+  return '';
+}
+
+async function loadCiScan() {
+  try {
+    const res = await fetch('/api/scan?file=' + encodeURIComponent('scan-report/ci-scan.json'));
+    if (!res.ok) {
+      state.ci.scan = null;
+      return;
+    }
+    const payload = await res.json();
+    state.ci.scan = payload.data || null;
+  } catch {
+    state.ci.scan = null;
+  }
+}
+
+function ciScanTypeLabel(meta) {
+  const type = String(meta.elementType || '');
+  const depth = Number(meta.depth);
+  const maxPages = Number(meta.maxPages);
+  if (String(meta.origin || '') === 'github-actions') {
+    return t('scans.filter.automated');
+  }
+  if (type === 'links' && (!Number.isFinite(depth) || depth <= 1) && (!Number.isFinite(maxPages) || maxPages <= 50)) {
+    return t('scans.filter.quick');
+  }
+  if (type === 'all' && ((Number.isFinite(depth) && depth >= 10) || (Number.isFinite(maxPages) && maxPages >= 99999))) {
+    return t('scans.filter.full');
+  }
+  return t('scans.filter.custom');
+}
+
+function renderCiScan() {
+  const body = $('#ci-scan-body');
+  const badge = $('#ci-scan-badge');
+  if (!body) return;
+
+  const scan = state.ci.scan;
+  if (!scan) {
+    if (badge) badge.textContent = '';
+    body.innerHTML = `<p class="empty">${esc(t('ci.scan.empty'))}</p>`;
+    return;
+  }
+
+  const meta = scan.scanMeta || {};
+  const pages = scan.totalPages != null ? scan.totalPages : '—';
+  const links = scan.totalLinks != null ? scan.totalLinks : '—';
+  const type = ciScanTypeLabel(meta);
+  const depth = meta.depth != null ? meta.depth : '—';
+  const date = scan.timestamp ? fmtDateShort(Date.parse(scan.timestamp)) : '—';
+  const downloads = Array.isArray(scan.downloads) ? scan.downloads.length : 0;
+  const invalid = Array.isArray(scan.invalidLinks) ? scan.invalidLinks.length : 0;
+  if (badge) {
+    badge.textContent = Number(pages) === 1
+      ? t('ci.scan.onePage')
+      : t('ci.scan.pagesCount', { n: num(pages) });
+  }
+
+  const stat = (label, value) => `
+    <div class="ci-scan-stat">
+      <span>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+    </div>`;
+
+  body.innerHTML = `
+    <p class="ci-scan-url">${esc(scan.baseUrl || '—')}</p>
+    <div class="ci-scan-grid">
+      ${stat(t('ci.scan.pages'), num(pages))}
+      ${stat(t('ci.scan.links'), num(links))}
+      ${stat(t('ci.scan.type'), type)}
+      ${stat(t('ci.scan.depth'), num(depth))}
+      ${stat(t('ci.scan.date'), date)}
+      ${downloads > 0 ? stat(t('ci.scan.downloads'), num(downloads)) : ''}
+      ${invalid > 0 ? stat(t('ci.scan.invalid'), num(invalid)) : ''}
+    </div>
+    <div class="ci-run-actions">
+      <button type="button" class="btn" data-ci-scan-view>${esc(t('ci.scan.view'))}</button>
+    </div>`;
+}
+
+async function loadCiErrors() {
+  const config = state.ci.config || {};
+  const entry = (config.importedRuns || []).find((item) => String(item.runId) === String(config.lastImportedRunId));
+  const paths = [entry && entry.reportPath, entry && entry.cucumberPath].filter(Boolean);
+  state.ci.errors = [];
+  if (paths.length === 0) return;
+
+  state.ci.errorReportLoading = true;
+  try {
+    const responses = await Promise.all(paths.map(async (reportPath) => {
+      const res = await fetch('/api/run?path=' + encodeURIComponent(reportPath));
+      if (!res.ok) return null;
+      return res.json();
+    }));
+    const errors = [];
+    for (const detail of responses) {
+      if (detail && Array.isArray(detail.errorsList)) errors.push(...detail.errorsList);
+    }
+    state.ci.errors = errors;
+  } catch {
+    state.ci.errors = [];
+  } finally {
+    state.ci.errorReportLoading = false;
+  }
+}
+
+function renderCiErrors() {
+  const card = $('#ci-errors-card');
+  if (!card) return;
+  const config = state.ci.config || {};
+  if (!config.lastImportedRunId) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  renderErrorCards(
+    state.ci.errors,
+    $('#ci-errors-list'),
+    $('#ci-errors-empty'),
+    $('#ci-errors-count'),
+    null,
+    state.ci.errors.length
+  );
+}
+
+function renderCi() {
+  const configCard = $('#ci-config');
+  const content = $('#ci-content');
+  if (!configCard || !content) return;
+
+  const cfg = state.ci.config || {};
+  const configured = Boolean(cfg.configured);
+  $('#ci-badge').textContent = configured
+    ? (cfg.autoImport ? t('ci.auto') : t('ci.manual'))
+    : t('ci.noConfig');
+
+  configCard.hidden = configured;
+  content.hidden = !configured;
+
+  if (!configured) {
+    $('#ci-config-text').textContent = t('ci.config.text');
+    $('#ci-config-code').textContent = [
+      'GITHUB_REPO=tu-usuario/CACHAI-QA',
+      'GITHUB_TOKEN=github_pat_...',
+      'GITHUB_CI_AUTO_IMPORT=true'
+    ].join('\n');
+    return;
+  }
+
+  $('#ci-repo').textContent = cfg.repo || '—';
+  $('#ci-help').textContent = t('ci.help');
+
+  const importButton = $('#ci-import');
+  const latestSuccess = state.ci.runs.find((run) => ciStatusValue(run) === 'success');
+  importButton.disabled = state.ci.importing || !latestSuccess;
+  importButton.textContent = state.ci.importing ? t('ci.importing') : t('ci.import');
+  const runButton = $('#ci-run-start');
+  if (runButton) {
+    runButton.disabled = state.ci.dispatching || state.ci.importing;
+    runButton.textContent = state.ci.dispatching ? t('ci.run.waiting') : t('ci.run.start');
+  }
+  $('#ci-refresh').disabled = state.ci.loading || state.ci.importing;
+
+  const list = $('#ci-runs');
+  const empty = $('#ci-empty');
+  if (state.ci.error) {
+    list.innerHTML = '';
+    empty.hidden = false;
+    empty.textContent = state.ci.error;
+  } else if (state.ci.runs.length === 0) {
+    list.innerHTML = '';
+    empty.hidden = false;
+    empty.textContent = t('ci.empty');
+  } else {
+    empty.hidden = true;
+    list.innerHTML = state.ci.runs.map((run) => {
+      const imported = String(run.id) === String(cfg.lastImportedRunId);
+      const date = run.createdAt ? fmtDateShort(Date.parse(run.createdAt)) : '—';
+      const status = ciStatusValue(run);
+      return `
+        <article class="ci-run ${imported ? 'is-imported' : ''}">
+          <div class="ci-run-main">
+            <div class="ci-run-title">
+              <span class="ci-dot ${ciStatusClass(run)}" aria-hidden="true"></span>
+              #${esc(num(run.runNumber))} · ${esc(run.name || 'CACHAI-QA')}
+              ${imported ? `<span class="badge info">${esc(t('ci.imported'))}</span>` : ''}
+            </div>
+            <div class="ci-run-meta">
+              <span>${esc(t('ci.branch'))}: ${esc(run.branch || '—')}</span>
+              <span>${esc(date)}</span>
+              <span>${esc(ciStatusLabel(run))}</span>
+            </div>
+          </div>
+          <div class="ci-run-actions">
+            ${run.htmlUrl ? `<a class="btn ghost" href="${esc(run.htmlUrl)}" target="_blank" rel="noopener">${esc(t('ci.open'))}</a>` : ''}
+            <button type="button" class="btn ${status === 'success' ? 'primary' : ''}" data-ci-import="${esc(run.id)}" ${status !== 'success' || state.ci.importing ? 'disabled' : ''}>
+              ${esc(t('ci.import.run'))}
+            </button>
+          </div>
+        </article>`;
+    }).join('');
+  }
+
+  const last = $('#ci-last');
+  const lastText = $('#ci-last-text');
+  if (cfg.lastImportedRunId) {
+    last.hidden = false;
+    const date = cfg.lastImportedAt ? fmtDateShort(Date.parse(cfg.lastImportedAt)) : '—';
+    lastText.textContent = t('ci.last.text', { id: cfg.lastImportedRunId, date });
+  } else {
+    last.hidden = false;
+    lastText.textContent = t('ci.last.none');
+  }
+
+  renderCiScan();
+  renderCiErrors();
+}
+
+async function loadCi() {
+  state.ci.loading = true;
+  renderCi();
+  try {
+    const [configRes, runsRes] = await Promise.all([
+      fetch('/api/ci/config'),
+      fetch('/api/ci/runs'),
+      loadCiScan()
+    ]);
+    const config = await configRes.json();
+    const runsPayload = await runsRes.json();
+    state.ci.config = config;
+    state.ci.runs = Array.isArray(runsPayload.runs) ? runsPayload.runs : [];
+    state.ci.error = runsPayload.error || '';
+    await loadCiErrors();
+
+    renderCi();
+
+    if (config.configured && config.autoImport) {
+      const latest = state.ci.runs.find((run) => ciStatusValue(run) === 'success');
+      if (latest && String(latest.id) !== String(config.lastImportedRunId)) {
+        await importCi(latest.id, true);
+      }
+    }
+  } catch (e) {
+    state.ci.error = String(e && e.message ? e.message : e);
+    renderCi();
+  } finally {
+    state.ci.loading = false;
+    renderCi();
+  }
+}
+
+let ciRunPollTimer = null;
+
+function loadCiForm() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('cq.ciForm') || '{}');
+    const values = {
+      '#ci-run-scan-type': saved.scanType,
+      '#ci-run-depth': saved.depth,
+      '#ci-run-max-pages': saved.maxPages,
+      '#ci-run-engine': saved.engine,
+      '#ci-run-browsers': saved.browsers,
+      '#ci-run-max-links': saved.maxLinks
+    };
+    for (const [selector, value] of Object.entries(values)) {
+      const element = $(selector);
+      if (element && value != null && value !== '') element.value = value;
+    }
+  } catch { /* preferencias inválidas */ }
+}
+
+function saveCiForm() {
+  try {
+    localStorage.setItem('cq.ciForm', JSON.stringify({
+      scanType: $('#ci-run-scan-type').value,
+      depth: $('#ci-run-depth').value,
+      maxPages: $('#ci-run-max-pages').value,
+      engine: $('#ci-run-engine').value,
+      browsers: $('#ci-run-browsers').value,
+      maxLinks: $('#ci-run-max-links').value
+    }));
+  } catch { /* almacenamiento no disponible */ }
+}
+
+async function startCiRun() {
+  const input = $('#ci-run-url');
+  const status = $('#ci-run-status');
+  const url = input ? input.value.trim() : '';
+  if (!/^https?:\/\/[^\s]+$/i.test(url)) {
+    toast(t('scans.create.invalid'), true);
+    return;
+  }
+  if (state.ci.dispatching) return;
+
+  state.ci.dispatching = true;
+  renderCi();
+  if (status) status.textContent = t('ci.run.dispatching');
+
+  const knownIds = new Set(state.ci.runs.map((run) => String(run.id)));
+  const scanType = ($('#ci-run-scan-type') && $('#ci-run-scan-type').value) || 'all';
+  const depth = Number($('#ci-run-depth') && $('#ci-run-depth').value);
+  const maxPages = Number($('#ci-run-max-pages') && $('#ci-run-max-pages').value);
+  const engine = ($('#ci-run-engine') && $('#ci-run-engine').value) || 'both';
+  const browsers = ($('#ci-run-browsers') && $('#ci-run-browsers').value) || 'chromium';
+  const maxLinks = Number($('#ci-run-max-links') && $('#ci-run-max-links').value);
+  saveCiForm();
+  try {
+    const res = await fetch('/api/ci/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, scanType, depth, maxPages, engine, browsers, maxLinks })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || t('ci.run.error'));
+    toast(t('ci.run.sent'));
+    if (status) status.textContent = t('ci.run.waiting');
+    pollCiRun(knownIds, 0);
+  } catch (e) {
+    state.ci.dispatching = false;
+    renderCi();
+    if (status) status.textContent = '';
+    toast(String(e && e.message ? e.message : t('ci.run.error')), true);
+  }
+}
+
+async function pollCiRun(knownIds, attempt) {
+  clearTimeout(ciRunPollTimer);
+  ciRunPollTimer = null;
+  if (attempt > 120) {
+    state.ci.dispatching = false;
+    renderCi();
+    toast(t('ci.run.error'), true);
+    return;
+  }
+
+  await loadCi();
+  const newRun = state.ci.runs.find((run) => !knownIds.has(String(run.id)));
+  const status = $('#ci-run-status');
+  if (newRun) {
+    if (status) status.textContent = `${t('ci.run.waiting')} #${newRun.runNumber || newRun.id}`;
+    if (newRun.status === 'completed') {
+      state.ci.dispatching = false;
+      renderCi();
+      if (status) status.textContent = t('ci.run.done');
+      toast(t('ci.run.done'));
+      return;
+    }
+  }
+
+  ciRunPollTimer = setTimeout(() => pollCiRun(knownIds, attempt + 1), 10000);
+}
+
+async function importCi(runId, silent) {
+  if (!runId || state.ci.importing) return;
+  state.ci.importing = true;
+  renderCi();
+
+  try {
+    const res = await fetch('/api/ci/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || t('ci.import.error'));
+
+    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCiScan()]);
+    toast(t('ci.import.ok'));
+    await loadCi();
+  } catch (e) {
+    toast(String(e && e.message ? e.message : t('ci.import.error')), true);
+  } finally {
+    state.ci.importing = false;
+    renderCi();
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Pestañas y filtros
  * ------------------------------------------------------------------ */
 function setTab(name) {
@@ -1840,6 +2576,7 @@ function setTab(name) {
   if (name === 'home') loadOverview();
   if (name === 'scans') loadScans();
   if (name === 'about') renderAbout();
+  if (name === 'ci') loadCi();
   if (name === 'runs') {
     loadTests();
     loadRuns();
@@ -1879,8 +2616,35 @@ function bind() {
   $$('[data-about-tab]').forEach((button) => button.addEventListener('click', () => setAboutTab(button.dataset.aboutTab)));
 
   $('#refresh').addEventListener('click', async () => {
-    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns()]);
+    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCi()]);
     toast(t('toast.refreshed'));
+  });
+
+  $('#scan-start').addEventListener('click', startScan);
+  $('#scan-cancel').addEventListener('click', cancelScan);
+  $('#scan-mode').addEventListener('change', syncScanMode);
+  $('#scan-url').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      startScan();
+    }
+  });
+
+  $('#ci-refresh').addEventListener('click', loadCi);
+  $('#ci-run-start').addEventListener('click', startCiRun);
+  $('#ci-run-url').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      startCiRun();
+    }
+  });
+  $('#ci-import').addEventListener('click', () => {
+    const latest = state.ci.runs.find((run) => ciStatusValue(run) === 'success');
+    if (latest) importCi(latest.id, false);
+  });
+  $('#ci-runs').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-ci-import]');
+    if (button) importCi(button.dataset.ciImport, false);
   });
 
   $('#scans-list').addEventListener('click', (event) => {
@@ -1946,6 +2710,8 @@ function bind() {
   document.addEventListener('click', (event) => {
     const copy = event.target.closest('[data-copy]');
     if (copy) copyText(copy.dataset.copy);
+    const ciScan = event.target.closest('[data-ci-scan-view]');
+    if (ciScan) openScan('scan-report/ci-scan.json');
     const latest = event.target.closest('[data-run-latest]');
     if (latest) clearSelectedRun(latest.dataset.runLatest);
     if (event.target.closest('#home-show-all')) {
@@ -1974,10 +2740,12 @@ function bind() {
 function init() {
   applyTheme();
   bind();
+  syncScanMode();
+  loadCiForm();
   applyLang();
   setScanFilter(state.scanFilter);
   setRunFilter(state.runFilter);
-  Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns()]);
+  Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCi(), loadScanJob()]);
 }
 
 init();

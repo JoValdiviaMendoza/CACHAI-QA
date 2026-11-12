@@ -14,11 +14,23 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
+
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+const { createGithubActions } = require('./github-actions');
 
 const ROOT = path.resolve(__dirname, '..');
 const DASHBOARD_DIR = __dirname;
 const BASE_PORT = parseInt(process.env.DASHBOARD_PORT, 10) || 4321;
+const githubActions = createGithubActions({
+  root: ROOT,
+  repo: process.env.GITHUB_REPO || '',
+  token: process.env.GITHUB_TOKEN || '',
+  workflow: process.env.GITHUB_WORKFLOW || 'qa.yml',
+  ref: process.env.GITHUB_CI_REF || 'main',
+  autoImport: /^(1|true|yes)$/i.test(process.env.GITHUB_CI_AUTO_IMPORT || '')
+});
 const SCAN_DIRS = [ROOT, path.join(ROOT, 'reports'), path.join(ROOT, 'scan-report')];
 const EXCLUDED = new Set(['package.json', 'package-lock.json', 'tsconfig.json', 'results.json']);
 const MAX_PARSE_BYTES = 25 * 1024 * 1024;
@@ -87,6 +99,9 @@ function detectScanType(meta) {
   const depth = Number(config.depth);
   const maxPages = Number(config.maxPages);
 
+  if (String(config.origin || '') === 'github-actions') {
+    return 'automated';
+  }
   if (types === 'links' && (!Number.isFinite(depth) || depth <= 1) && (!Number.isFinite(maxPages) || maxPages <= 50)) {
     return 'quick';
   }
@@ -1497,8 +1512,253 @@ function serveStatic(res, urlPath) {
 }
 
 // ------------------------------------------------------------------
+// Auditoría local desde el dashboard
+// ------------------------------------------------------------------
+
+let localAuditJob = {
+  running: false,
+  url: '',
+  output: '',
+  mode: 'full',
+  scanType: 'all',
+  depth: 999,
+  maxPages: 999999,
+  maxLinks: 40,
+  stage: '',
+  stages: [],
+  startedAt: null,
+  finishedAt: null,
+  exitCode: null,
+  testsFailed: false,
+  cancelled: false,
+  child: null,
+  error: '',
+  log: []
+};
+
+function appendScanLog(chunk) {
+  const text = String(chunk || '');
+  if (!text) return;
+  const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+  localAuditJob.log.push(...lines);
+  if (localAuditJob.log.length > 240) localAuditJob.log = localAuditJob.log.slice(-240);
+}
+
+function validTargetUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function runAuditCommand(args, stage) {
+  return new Promise((resolve) => {
+    localAuditJob.stage = stage;
+    appendScanLog(`\n▶ ${stage}`);
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        TS_NODE_TRANSPILE_ONLY: '1',
+        CUCUMBER_PARALLEL: process.env.CUCUMBER_PARALLEL || '2'
+      },
+      windowsHide: true
+    });
+    localAuditJob.child = child;
+    child.stdout.on('data', appendScanLog);
+    child.stderr.on('data', appendScanLog);
+    child.on('error', (error) => {
+      appendScanLog(`[${stage}] ${error && error.message ? error.message : error}`);
+      if (localAuditJob.child === child) localAuditJob.child = null;
+      resolve(1);
+    });
+    child.on('close', (code) => {
+      if (localAuditJob.child === child) localAuditJob.child = null;
+      resolve(typeof code === 'number' ? code : 1);
+    });
+  });
+}
+
+async function runLocalAudit(job) {
+  try {
+    const scanCode = await runAuditCommand([
+      '-r', 'ts-node/register/transpile-only',
+      'crawler.ts',
+      `--url=${job.url}`,
+      `--type=${job.scanType}`,
+      `--depth=${job.depth}`,
+      `--max-pages=${job.maxPages}`,
+      '--concurrency=3',
+      '--headless',
+      `--output=${job.output}`
+    ], 'scan');
+    if (job.cancelled) return;
+    if (scanCode !== 0) {
+      localAuditJob.error = 'El crawler terminó con errores.';
+      localAuditJob.exitCode = 1;
+      return;
+    }
+
+    const testCode = await runAuditCommand([
+      '-r', 'ts-node/register/transpile-only',
+      'cli/from-scan.ts',
+      `--scan=${job.output}`,
+      '--run',
+      '--browsers=chromium',
+      '--workers=2',
+      `--max-links=${job.maxLinks}`,
+      '--timeout=60000',
+      '--no-prompt',
+      '--no-open'
+    ], 'playwright');
+    if (job.cancelled) return;
+    localAuditJob.testsFailed = testCode !== 0;
+
+    const cucumberCode = await runAuditCommand([
+      path.join(ROOT, 'node_modules', '@cucumber', 'cucumber', 'bin', 'cucumber.js'),
+      '--config', 'cucumber.js'
+    ], 'cucumber');
+    if (job.cancelled) return;
+    if (cucumberCode !== 0) localAuditJob.testsFailed = true;
+
+    const reportCode = await runAuditCommand([
+      'cli/report-defects.js',
+      'both',
+      `--scan=${job.output}`
+    ], 'reportes');
+
+    localAuditJob.exitCode = scanCode === 0 && reportCode === 0 ? 0 : 1;
+  } catch (error) {
+    localAuditJob.error = String(error && error.message ? error.message : error);
+    localAuditJob.exitCode = 1;
+  } finally {
+    localAuditJob.running = false;
+    localAuditJob.stage = '';
+    localAuditJob.finishedAt = new Date().toISOString();
+    invalidateDashboardCaches();
+  }
+}
+
+function normalizeAuditOptions(body) {
+  const mode = ['quick', 'full', 'custom'].includes(body.mode) ? body.mode : 'full';
+  let scanType = ['all', 'links', 'images', 'forms', 'buttons'].includes(body.scanType) ? body.scanType : 'all';
+  let depth = Number(body.depth);
+  let maxPages = Number(body.maxPages);
+  let maxLinks = Number(body.maxLinks);
+  if (mode === 'quick') {
+    scanType = 'links';
+    depth = 1;
+    maxPages = 50;
+  } else if (mode === 'full') {
+    scanType = 'all';
+    depth = 999;
+    maxPages = 999999;
+  } else {
+    if (!Number.isFinite(depth) || depth < 0) depth = 2;
+    if (!Number.isFinite(maxPages) || maxPages < 1) maxPages = 50;
+  }
+  if (!Number.isFinite(maxLinks) || maxLinks < 1) maxLinks = 40;
+  return {
+    mode,
+    scanType,
+    depth: Math.max(0, Math.min(9999, Math.floor(depth))),
+    maxPages: Math.max(1, Math.min(999999, Math.floor(maxPages))),
+    maxLinks: Math.max(1, Math.min(500, Math.floor(maxLinks)))
+  };
+}
+
+function targetSlug(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, '').replace(/[^a-z0-9.-]/gi, '-');
+    return host || 'sitio';
+  } catch {
+    return 'sitio';
+  }
+}
+
+function startLocalAudit(body) {
+  const targetUrl = validTargetUrl(body && body.url);
+  if (!targetUrl) throw new Error('Ingresa una URL HTTP o HTTPS válida.');
+  if (localAuditJob.running) throw new Error('Ya hay una auditoría en curso.');
+  const options = normalizeAuditOptions(body || {});
+
+  const output = `scan-report/${targetSlug(targetUrl)}-${options.mode}-${formatSlug(Date.now())}.json`;
+  localAuditJob = {
+    running: true,
+    url: targetUrl,
+    output,
+    ...options,
+    stage: 'scan',
+    stages: ['scan', 'playwright', 'cucumber', 'reportes'],
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    exitCode: null,
+    testsFailed: false,
+    cancelled: false,
+    child: null,
+    error: '',
+    log: []
+  };
+
+  runLocalAudit(localAuditJob).catch((error) => {
+    localAuditJob.error = String(error && error.message ? error.message : error);
+    localAuditJob.running = false;
+    localAuditJob.exitCode = 1;
+    localAuditJob.finishedAt = new Date().toISOString();
+  });
+
+  return localAuditStatus();
+}
+
+function cancelLocalAudit() {
+  if (!localAuditJob.running) throw new Error('No hay una auditoría en curso.');
+  localAuditJob.cancelled = true;
+  localAuditJob.error = 'Auditoría cancelada.';
+  const child = localAuditJob.child;
+  if (child && child.pid) {
+    if (process.platform === 'win32') {
+      exec(`taskkill /PID ${child.pid} /T /F`, () => {});
+    } else {
+      try { child.kill('SIGTERM'); } catch { /* ignore */ }
+    }
+  }
+  return localAuditStatus();
+}
+
+function localAuditStatus() {
+  return {
+    running: localAuditJob.running,
+    url: localAuditJob.url,
+    output: localAuditJob.output,
+    mode: localAuditJob.mode,
+    scanType: localAuditJob.scanType,
+    depth: localAuditJob.depth,
+    maxPages: localAuditJob.maxPages,
+    stage: localAuditJob.stage,
+    stages: localAuditJob.stages,
+    startedAt: localAuditJob.startedAt,
+    finishedAt: localAuditJob.finishedAt,
+    exitCode: localAuditJob.exitCode,
+    testsFailed: localAuditJob.testsFailed,
+    cancelled: localAuditJob.cancelled,
+    error: localAuditJob.error,
+    log: localAuditJob.log.slice(-40)
+  };
+}
+
+// ------------------------------------------------------------------
 // Router
 // ------------------------------------------------------------------
+
+function invalidateDashboardCaches() {
+  jsonCache.clear();
+  scansCache = { at: 0, data: [] };
+  playwrightStatsCache.clear();
+  playwrightDetailCache.clear();
+}
 
 async function handle(req, res) {
   const parsed = new URL(req.url, 'http://localhost');
@@ -1596,6 +1856,74 @@ async function handle(req, res) {
   if (pathname === '/api/runs' && method === 'GET') {
     try { return sendJson(res, 200, { runs: listTestRuns() }); }
     catch (e) { return sendJson(res, 500, { error: String(e) }); }
+  }
+
+  if (pathname === '/api/audit/status' && method === 'GET') {
+    return sendJson(res, 200, localAuditStatus());
+  }
+
+  if (pathname === '/api/audit/start' && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const job = startLocalAudit(body);
+      return sendJson(res, 202, job);
+    } catch (e) {
+      return sendJson(res, 400, { error: String(e) });
+    }
+  }
+
+  if (pathname === '/api/audit/cancel' && method === 'POST') {
+    try {
+      return sendJson(res, 200, cancelLocalAudit());
+    } catch (e) {
+      return sendJson(res, 400, { error: String(e) });
+    }
+  }
+
+  if (pathname === '/api/ci/config' && method === 'GET') {
+    return sendJson(res, 200, githubActions.publicConfig());
+  }
+
+  if (pathname === '/api/ci/runs' && method === 'GET') {
+    const config = githubActions.publicConfig();
+    if (!config.configured) {
+      return sendJson(res, 200, { ...config, runs: [], error: 'Configura GITHUB_REPO y GITHUB_TOKEN en src/.env.' });
+    }
+    try {
+      const runs = await githubActions.listRuns();
+      return sendJson(res, 200, { ...config, runs });
+    } catch (e) {
+      return sendJson(res, 200, { ...config, runs: [], error: String(e) });
+    }
+  }
+
+  if (pathname === '/api/ci/run' && method === 'POST') {
+    if (!githubActions.publicConfig().configured) {
+      return sendJson(res, 400, { error: 'Configura GITHUB_REPO y GITHUB_TOKEN en src/.env.' });
+    }
+    try {
+      const body = await readBody(req);
+      const targetUrl = validTargetUrl(body.url);
+      if (!targetUrl) return sendJson(res, 400, { error: 'Ingresa una URL HTTP o HTTPS válida.' });
+      const result = await githubActions.dispatchRun(targetUrl, body);
+      return sendJson(res, 202, result);
+    } catch (e) {
+      return sendJson(res, 500, { error: String(e) });
+    }
+  }
+
+  if (pathname === '/api/ci/import' && method === 'POST') {
+    if (!githubActions.publicConfig().configured) {
+      return sendJson(res, 400, { error: 'Configura GITHUB_REPO y GITHUB_TOKEN en src/.env.' });
+    }
+    try {
+      const body = await readBody(req);
+      const result = await githubActions.importRun(body.runId);
+      invalidateDashboardCaches();
+      return sendJson(res, 200, result);
+    } catch (e) {
+      return sendJson(res, 500, { error: String(e) });
+    }
   }
 
   if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Endpoint no encontrado' });

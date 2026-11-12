@@ -38,6 +38,7 @@
       <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="home" id="tab-home" aria-controls="panel-home"><span data-i18n="tabs.home">Inicio</span></button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-tab="scans" id="tab-scans" aria-controls="panel-scans"><span data-i18n="tabs.scans">Escaneos</span></button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-tab="runs" id="tab-runs" aria-controls="panel-runs"><span data-i18n="tabs.runs">Ejecuciones</span></button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="ci" id="tab-ci" aria-controls="panel-ci"><span data-i18n="tabs.ci">GitHub Actions</span></button>
       <button type="button" class="tab tab--info" role="tab" aria-selected="false" data-tab="about" id="tab-about" aria-controls="panel-about">
         <span class="tab-icon" aria-hidden="true">ℹ️</span>
         <span data-i18n="tabs.about">¿Qué es CACHAI-QA?</span>
@@ -120,6 +121,51 @@
         <span id="scans-count" class="badge"></span>
       </div>
 
+      <div class="card scan-create-card">
+        <div class="card-head">
+          <div class="card-head-title">
+            <h3 data-i18n="scans.create.title">Nueva auditoría local completa</h3>
+            <span id="scan-job-badge" class="badge"></span>
+          </div>
+        </div>
+        <p class="muted" data-i18n="scans.create.help">Ingresa una URL. Se ejecuta crawler, generación, Playwright, Cucumber y reportes.</p>
+        <div class="scan-mode-row">
+          <label for="scan-mode" data-i18n="scans.create.mode">Tipo de escaneo</label>
+          <select id="scan-mode" class="input">
+            <option value="quick" data-i18n="scans.filter.quick">⚡ Rápido</option>
+            <option value="full" selected data-i18n="scans.filter.full">🌐 Completo</option>
+            <option value="custom" data-i18n="scans.filter.custom">🎯 Personalizado</option>
+          </select>
+        </div>
+        <div id="scan-custom" class="scan-custom-row" hidden>
+          <label>
+            <span data-i18n="scans.create.type">Elementos</span>
+            <select id="scan-custom-type" class="input">
+              <option value="all" data-i18n="scans.create.type.all">Todos</option>
+              <option value="links" data-i18n="scans.create.type.links">Enlaces</option>
+              <option value="images" data-i18n="scans.create.type.images">Imágenes</option>
+              <option value="forms" data-i18n="scans.create.type.forms">Formularios</option>
+              <option value="buttons" data-i18n="scans.create.type.buttons">Botones</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="scans.create.depth">Profundidad</span>
+            <input id="scan-depth" class="input" type="number" min="0" max="9999" value="2" />
+          </label>
+          <label>
+            <span data-i18n="scans.create.maxPages">Máx. páginas</span>
+            <input id="scan-max-pages" class="input" type="number" min="1" max="999999" value="50" />
+          </label>
+        </div>
+        <div class="scan-create-row">
+          <input id="scan-url" type="url" class="input" data-i18n-placeholder="scans.create.placeholder" placeholder="https://ejemplo.com" autocomplete="url" />
+          <button type="button" id="scan-start" class="btn primary" data-i18n="scans.create.start">Ejecutar auditoría</button>
+          <button type="button" id="scan-cancel" class="btn danger" data-i18n="scans.create.cancel" hidden>Cancelar</button>
+        </div>
+        <p id="scan-job-status" class="muted"></p>
+        <pre id="scan-job-log" class="output" hidden></pre>
+      </div>
+
       <div class="segmented sub-tabs" role="group" aria-label="Filtro de escaneos">
         <button type="button" class="active" data-scan-filter="quick">
           <span data-i18n="scans.filter.quick">⚡ Rápido</span>
@@ -132,6 +178,10 @@
         <button type="button" data-scan-filter="custom">
           <span data-i18n="scans.filter.custom">🎯 Personalizado</span>
           <span class="sub-count" data-scan-count="custom">0</span>
+        </button>
+        <button type="button" data-scan-filter="automated">
+          <span data-i18n="scans.filter.automated">🤖 Automatizados</span>
+          <span class="sub-count" data-scan-count="automated">0</span>
         </button>
         <button type="button" data-scan-filter="favorites">
           <span data-i18n="scans.filter.favorites">⭐ Guardados</span>
@@ -296,6 +346,116 @@
           <div class="logo-big" aria-hidden="true">☁️</div>
           <h3 data-i18n="runs.browserstack.title">BrowserStack</h3>
           <p class="muted" data-i18n="runs.browserstack.soon">Integración con BrowserStack en desarrollo. Próximamente podrás visualizar aquí los resultados de las pruebas ejecutadas en la nube sobre múltiples navegadores y dispositivos reales.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================= GITHUB ACTIONS ============================= -->
+    <section id="panel-ci" class="panel" role="tabpanel" aria-labelledby="tab-ci">
+      <div class="panel-head">
+        <h2 data-i18n="ci.title">GitHub Actions</h2>
+        <span id="ci-badge" class="badge"></span>
+      </div>
+      <p class="ci-warning" data-i18n="ci.warning">Esta sección requiere conocimientos de Git, GitHub Actions y tokens de acceso. Úsala con cuidado: una ejecución full puede tardar y consumir recursos del sitio o de tu cuenta.</p>
+
+      <div id="ci-config" class="card" hidden>
+        <h3 data-i18n="ci.config.title">Configuración pendiente</h3>
+        <p id="ci-config-text" class="muted"></p>
+        <pre id="ci-config-code" class="output"></pre>
+        <p class="muted" data-i18n="ci.config.help">Agrega estas variables a src/.env y reinicia el dashboard.</p>
+      </div>
+
+      <div id="ci-content" hidden>
+        <div class="ci-layout">
+          <section class="card ci-scan-card">
+            <div class="card-head">
+              <div class="card-head-title">
+                <h3 data-i18n="ci.scan.title">Scan importado</h3>
+                <span id="ci-scan-badge" class="badge"></span>
+              </div>
+            </div>
+            <div id="ci-scan-body"></div>
+          </section>
+
+          <section class="card ci-runs-card">
+            <div class="card-head">
+              <div class="card-head-title">
+                <h3 data-i18n="ci.runs.title">Ejecuciones recientes</h3>
+                <span id="ci-repo" class="badge"></span>
+              </div>
+              <div class="card-head-actions">
+                <button type="button" id="ci-refresh" class="btn ghost" data-i18n="ci.refresh">Actualizar</button>
+                <button type="button" id="ci-import" class="btn primary" data-i18n="ci.import">Importar última</button>
+              </div>
+            </div>
+            <p id="ci-help" class="muted"></p>
+            <div class="ci-run-create">
+              <input id="ci-run-url" type="url" class="input" data-i18n-placeholder="ci.run.placeholder" placeholder="https://ejemplo.com" autocomplete="url" />
+              <button type="button" id="ci-run-start" class="btn primary" data-i18n="ci.run.start">Ejecutar en GitHub Actions</button>
+            </div>
+            <details class="ci-run-config">
+              <summary data-i18n="ci.run.config">Configuración del workflow</summary>
+              <p class="muted" data-i18n="ci.run.config.help">Estos valores se envían al workflow; no modifican el archivo YAML.</p>
+              <div class="ci-config-grid">
+                <label>
+                  <span data-i18n="ci.run.scanType">Elementos</span>
+                  <select id="ci-run-scan-type" class="input">
+                    <option value="all" selected data-i18n="scans.create.type.all">Todos</option>
+                    <option value="links" data-i18n="scans.create.type.links">Enlaces</option>
+                    <option value="images" data-i18n="scans.create.type.images">Imágenes</option>
+                    <option value="forms" data-i18n="scans.create.type.forms">Formularios</option>
+                    <option value="buttons" data-i18n="scans.create.type.buttons">Botones</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="ci.run.depth">Profundidad</span>
+                  <input id="ci-run-depth" class="input" type="number" min="0" max="9999" value="999" />
+                </label>
+                <label>
+                  <span data-i18n="ci.run.maxPages">Máx. páginas</span>
+                  <input id="ci-run-max-pages" class="input" type="number" min="1" max="999999" value="999999" />
+                </label>
+                <label>
+                  <span data-i18n="ci.run.engine">Motor</span>
+                  <select id="ci-run-engine" class="input">
+                    <option value="both" selected>Playwright + Cucumber</option>
+                    <option value="playwright">Playwright</option>
+                    <option value="cucumber">Cucumber</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="ci.run.browsers">Navegadores</span>
+                  <select id="ci-run-browsers" class="input">
+                    <option value="chromium" selected>Chromium</option>
+                    <option value="chromium,firefox">Chromium + Firefox</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="ci.run.maxLinks">Enlaces por página</span>
+                  <input id="ci-run-max-links" class="input" type="number" min="1" max="500" value="40" />
+                </label>
+              </div>
+            </details>
+            <p id="ci-run-status" class="muted"></p>
+            <div id="ci-runs" class="list"></div>
+            <p id="ci-empty" class="empty" hidden></p>
+          </section>
+        </div>
+
+        <section id="ci-errors-card" class="card" hidden>
+          <div class="card-head">
+            <div class="card-head-title">
+              <h3 data-i18n="ci.errors.title">Errores del reporte importado</h3>
+              <span id="ci-errors-count" class="badge fail"></span>
+            </div>
+          </div>
+          <p id="ci-errors-empty" class="muted" hidden data-i18n="ci.errors.empty">El reporte importado no registró errores.</p>
+          <div id="ci-errors-list" class="error-list"></div>
+        </section>
+
+        <div id="ci-last" class="card" hidden>
+          <h3 data-i18n="ci.last.title">Última importación</h3>
+          <p id="ci-last-text" class="muted"></p>
         </div>
       </div>
     </section>
