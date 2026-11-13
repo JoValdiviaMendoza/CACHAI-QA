@@ -1554,6 +1554,24 @@ function validTargetUrl(value) {
   }
 }
 
+function isLocalTargetUrl(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host) || host.endsWith('.local')) return true;
+    const parts = host.split('.').map(Number);
+    if (parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
+      return parts[0] === 10
+        || parts[0] === 127
+        || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+        || (parts[0] === 192 && parts[1] === 168)
+        || (parts[0] === 169 && parts[1] === 254);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function runAuditCommand(args, stage) {
   return new Promise((resolve) => {
     localAuditJob.stage = stage;
@@ -1905,6 +1923,9 @@ async function handle(req, res) {
       const body = await readBody(req);
       const targetUrl = validTargetUrl(body.url);
       if (!targetUrl) return sendJson(res, 400, { error: 'Ingresa una URL HTTP o HTTPS válida.' });
+      if (isLocalTargetUrl(targetUrl)) {
+        return sendJson(res, 400, { error: 'GitHub Actions no puede acceder a localhost. Usa una URL pública o un túnel.' });
+      }
       const result = await githubActions.dispatchRun(targetUrl, body);
       return sendJson(res, 202, result);
     } catch (e) {
@@ -1919,6 +1940,17 @@ async function handle(req, res) {
     try {
       const body = await readBody(req);
       const result = await githubActions.importRun(body.runId);
+      invalidateDashboardCaches();
+      return sendJson(res, 200, result);
+    } catch (e) {
+      return sendJson(res, 500, { error: String(e) });
+    }
+  }
+
+  if (pathname === '/api/ci/delete' && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const result = githubActions.deleteImportedRun(body.runId);
       invalidateDashboardCaches();
       return sendJson(res, 200, result);
     } catch (e) {

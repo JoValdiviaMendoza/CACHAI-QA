@@ -65,7 +65,7 @@ const I18N = {
     'tabs.ci': 'GitHub Actions',
     'tabs.about': '¿Qué es CACHAI-QA?',
     'ci.title': 'GitHub Actions',
-    'ci.warning': 'Esta sección requiere conocimientos de Git, GitHub Actions y tokens de acceso. Úsala con cuidado: una ejecución full puede tardar y consumir recursos del sitio o de tu cuenta.',
+    'ci.warning': 'Esta sección requiere conocimientos de Git, GitHub Actions y tokens de acceso. Úsala con cuidado: una ejecución full puede tardar y consumir recursos. GitHub Actions no puede acceder a localhost: usa una URL pública o un túnel.',
     'ci.refresh': 'Actualizar',
     'ci.import': 'Importar última',
     'ci.importing': 'Importando…',
@@ -87,6 +87,13 @@ const I18N = {
     'ci.scan.view': 'Ver escaneo',
     'ci.errors.title': 'Errores del reporte importado',
     'ci.errors.empty': 'El reporte importado no registró errores.',
+    'ci.imported.title': 'Reportes importados',
+    'ci.imported.empty': 'Todavía no hay reportes de GitHub importados.',
+    'ci.imported.viewReport': 'Ver reporte',
+    'ci.imported.viewScan': 'Ver scan',
+    'ci.imported.detail': 'Ver detalle',
+    'ci.imported.delete': 'Eliminar reporte',
+    'ci.imported.deleted': 'Reporte importado eliminado.',
     'ci.help': 'Importa una ejecución para que sus escaneos y reportes aparezcan en Inicio, Escaneos y Ejecuciones.',
     'ci.empty': 'No hay ejecuciones recientes.',
     'ci.last.title': 'Última importación',
@@ -319,7 +326,7 @@ const I18N = {
     'tabs.ci': 'GitHub Actions',
     'tabs.about': 'What is CACHAI-QA?',
     'ci.title': 'GitHub Actions',
-    'ci.warning': 'This section requires knowledge of Git, GitHub Actions and access tokens. Use it carefully: a full run may take time and consume site or account resources.',
+    'ci.warning': 'This section requires knowledge of Git, GitHub Actions and access tokens. Use it carefully: a full run may take time and consume resources. GitHub Actions cannot access localhost: use a public URL or a tunnel.',
     'ci.refresh': 'Refresh',
     'ci.import': 'Import latest',
     'ci.importing': 'Importing…',
@@ -341,6 +348,13 @@ const I18N = {
     'ci.scan.view': 'View scan',
     'ci.errors.title': 'Errors from imported report',
     'ci.errors.empty': 'The imported report did not record errors.',
+    'ci.imported.title': 'Imported reports',
+    'ci.imported.empty': 'No GitHub reports have been imported yet.',
+    'ci.imported.viewReport': 'View report',
+    'ci.imported.viewScan': 'View scan',
+    'ci.imported.detail': 'View details',
+    'ci.imported.delete': 'Delete report',
+    'ci.imported.deleted': 'Imported report deleted.',
     'ci.help': 'Import a run so its scans and reports appear in Home, Scans and Runs.',
     'ci.empty': 'No recent runs.',
     'ci.last.title': 'Last import',
@@ -557,23 +571,25 @@ const I18N = {
 
 const ABOUT = {
   es: {
-    intro: 'CACHAI-QA es un framework local de auditoría y pruebas automatizadas: escanea un sitio, genera pruebas a partir de lo que encuentra y las ejecuta en varios navegadores, dejando la evidencia en reportes HTML.',
+    intro: 'CACHAI-QA es un framework de auditoría y pruebas automatizadas: escanea un sitio, genera pruebas a partir de lo que encuentra, las ejecuta en varios navegadores y deja la evidencia en reportes y en un dashboard local. También puede ejecutarse en GitHub Actions.',
     howTitle: 'Cómo funciona',
     howSubtitle: 'El flujo actual, de principio a fin.',
     steps: [
       { title: 'Escaneo', text: 'Playwright recorre la URL y guarda páginas, enlaces, formularios e imágenes en un JSON. Puedes elegir un escaneo Rápido, Completo o Personalizado.' },
-      { title: 'Generación', text: 'TypeScript transforma ese JSON en pruebas de Playwright (con Page Object Model) y en escenarios Gherkin con sus steps de Cucumber.' },
-      { title: 'Ejecución', text: 'Playwright corre en Chromium, Chrome y Firefox en paralelo; Cucumber usa Chromium por defecto (configurable). Los enlaces se validan por HTTP una sola vez para no repetir el trabajo en cada navegador.' },
-      { title: 'Resultados', text: 'Se generan reportes HTML de ambos motores, métricas y una lista de defectos únicos. Este panel agrupa todo por URL y por tipo de error.' }
+      { title: 'Generación', text: 'TypeScript transforma ese JSON en un spec de Playwright y en escenarios Gherkin con sus steps de Cucumber. El flujo usa helpers y test.describe; no hay una capa formal de Page Objects.' },
+      { title: 'Ejecución local', text: 'Playwright corre en Chromium, Chrome y Firefox; Cucumber usa Chromium por defecto. La auditoría local del dashboard ejecuta todo el flujo y permite cancelar mientras corre.' },
+      { title: 'Resultados', text: 'Se generan reportes HTML/JSON de ambos motores, métricas, defectos únicos y un dashboard con Inicio, Escaneos, Ejecuciones y GitHub Actions.' },
+      { title: 'GitHub Actions', text: 'El workflow manual permite ejecutar el flujo en la nube, importar sus artefactos, revisar errores y eliminar reportes importados. Requiere token y una URL pública.' }
     ],
     techTitle: 'Tecnologías',
     techSubtitle: 'Lo que se usa hoy y lo que está planificado.',
     tech: [
-      { name: 'Node.js', text: 'Entorno de ejecución del framework y del panel local.', current: true },
+      { name: 'Node.js 22+', text: 'Entorno de ejecución del framework, Cucumber y el panel local.', current: true },
       { name: 'TypeScript', text: 'Lógica de escaneo, generación de pruebas y tipado del proyecto.', current: true },
       { name: 'Playwright', text: 'Automatización del navegador y motor de escaneo.', current: true },
       { name: 'Gherkin + Cucumber', text: 'Escenarios en lenguaje natural y ejecución BDD.', current: true },
-      { name: 'Page Object Model', text: 'Organización reutilizable de páginas y selectores.', current: true },
+      { name: 'GitHub Actions', text: 'Workflow manual, artefactos, importación y reportes remotos.', current: true },
+      { name: 'Dashboard local', text: 'Panel de escaneos, ejecuciones, auditoría local y reportes CI.', current: true },
       { name: 'BrowserStack', text: 'Ejecución en la nube y Safari. Planificado, aún no integrado.', current: false }
     ],
     planned: 'Planificado',
@@ -619,27 +635,40 @@ const ABOUT = {
           { term: 'Escaneo / crawl', def: 'Recorrido automático del sitio que produce el JSON de entrada.' },
           { term: 'Defecto único', def: 'Fallo agrupado por código y URL, sin contar cada navegador por separado.' }
         ]
+      },
+      {
+        title: 'GitHub Actions y automatización',
+        items: [
+          { term: 'Workflow', def: 'Archivo YAML de GitHub Actions que define los jobs de escaneo, pruebas y reportes.' },
+          { term: 'workflow_dispatch', def: 'Ejecución manual del workflow con parámetros como URL, profundidad o motor.' },
+          { term: 'Artifact', def: 'Archivo o carpeta que GitHub Actions publica al terminar; por ejemplo, scan y reports.' },
+          { term: 'Token', def: 'Credencial de GitHub con permisos de lectura para listar ejecuciones y descargar artefactos.' },
+          { term: 'Reporte importado', def: 'Copia local de un reporte de GitHub Actions, disponible para ver, detallar o eliminar.' },
+          { term: 'Auditoría local', def: 'Ejecución completa desde el dashboard: crawler, generación, Playwright, Cucumber y reportes.' }
+        ]
       }
     ]
   },
   en: {
-    intro: 'CACHAI-QA is a local audit and automated testing framework: it scans a site, generates tests from what it finds and runs them across several browsers, leaving the evidence in HTML reports.',
+    intro: 'CACHAI-QA is an audit and automated testing framework: it scans a site, generates tests from what it finds, runs them across several browsers and leaves the evidence in reports and a local dashboard. It can also run on GitHub Actions.',
     howTitle: 'How it works',
     howSubtitle: 'The current flow, from start to finish.',
     steps: [
       { title: 'Scan', text: 'Playwright walks the URL and stores pages, links, forms and images in a JSON file. You can choose a Quick, Full or Custom scan.' },
-      { title: 'Generation', text: 'TypeScript turns that JSON into Playwright tests (with Page Object Model) and Gherkin scenarios with their Cucumber steps.' },
-      { title: 'Execution', text: 'Playwright runs on Chromium, Chrome and Firefox in parallel; Cucumber uses Chromium by default (configurable). Links are checked over HTTP only once to avoid repeating work per browser.' },
-      { title: 'Results', text: 'HTML reports from both engines, metrics and a list of unique defects are produced. This panel groups everything by URL and error type.' }
+      { title: 'Generation', text: 'TypeScript turns that JSON into a Playwright spec and Gherkin scenarios with Cucumber steps. The flow uses helpers and test.describe; there is no formal Page Object layer.' },
+      { title: 'Local execution', text: 'Playwright runs on Chromium, Chrome and Firefox; Cucumber uses Chromium by default. The dashboard local audit runs the whole flow and can be cancelled while running.' },
+      { title: 'Results', text: 'HTML/JSON reports from both engines, metrics, unique defects and a dashboard with Home, Scans, Runs and GitHub Actions are produced.' },
+      { title: 'GitHub Actions', text: 'The manual workflow runs the flow in the cloud, imports artifacts, reviews errors and deletes imported reports. It requires a token and a public URL.' }
     ],
     techTitle: 'Technologies',
     techSubtitle: 'What is used today and what is planned.',
     tech: [
-      { name: 'Node.js', text: 'Runtime for the framework and the local panel.', current: true },
+      { name: 'Node.js 22+', text: 'Runtime for the framework, Cucumber and the local panel.', current: true },
       { name: 'TypeScript', text: 'Scan logic, test generation and project typing.', current: true },
       { name: 'Playwright', text: 'Browser automation and scanning engine.', current: true },
       { name: 'Gherkin + Cucumber', text: 'Natural-language scenarios and BDD execution.', current: true },
-      { name: 'Page Object Model', text: 'Reusable organization of pages and selectors.', current: true },
+      { name: 'GitHub Actions', text: 'Manual workflow, artifacts, import and remote reports.', current: true },
+      { name: 'Local dashboard', text: 'Scans, runs, local audit and CI reports panel.', current: true },
       { name: 'BrowserStack', text: 'Cloud execution and Safari. Planned, not integrated yet.', current: false }
     ],
     planned: 'Planned',
@@ -684,6 +713,17 @@ const ABOUT = {
           { term: 'Hook', def: 'Code that runs before or after a scenario.' },
           { term: 'Scan / crawl', def: 'Automatic walk of the site that produces the input JSON.' },
           { term: 'Unique defect', def: 'Failure grouped by code and URL, without counting each browser separately.' }
+        ]
+      },
+      {
+        title: 'GitHub Actions and automation',
+        items: [
+          { term: 'Workflow', def: 'GitHub Actions YAML file that defines the scan, test and report jobs.' },
+          { term: 'workflow_dispatch', def: 'Manual workflow run with parameters such as URL, depth or engine.' },
+          { term: 'Artifact', def: 'File or folder published by GitHub Actions, for example scan and reports.' },
+          { term: 'Token', def: 'GitHub credential with read permissions to list runs and download artifacts.' },
+          { term: 'Imported report', def: 'Local copy of a GitHub Actions report that can be viewed, detailed or deleted.' },
+          { term: 'Local audit', def: 'Full dashboard run: crawler, generation, Playwright, Cucumber and reports.' }
         ]
       }
     ]
@@ -1159,12 +1199,29 @@ function renderScanJob() {
     button.disabled = false;
     const cancel = $('#scan-cancel');
     if (cancel) cancel.hidden = true;
+    const progressWrap = $('#scan-progress-wrap');
+    if (progressWrap) progressWrap.hidden = true;
     return;
   }
 
   button.disabled = Boolean(job.running);
   const cancelButton = $('#scan-cancel');
   if (cancelButton) cancelButton.hidden = !job.running;
+  const progressWrap = $('#scan-progress-wrap');
+  const progress = $('#scan-progress');
+  const progressLabel = $('#scan-progress-label');
+  if (progressWrap && progress) {
+    const stagePercent = { scan: 15, playwright: 45, cucumber: 75, reportes: 95 };
+    progressWrap.hidden = false;
+    progress.value = job.running ? (stagePercent[job.stage] || 5) : 100;
+    if (progressLabel) {
+      progressLabel.textContent = job.running
+        ? (job.stage || '…')
+        : job.cancelled
+          ? t('scans.create.cancelledBadge')
+          : `${t('scans.create.doneBadge')} 100%`;
+    }
+  }
   badge.textContent = job.running
     ? t('scans.create.running')
     : job.cancelled
@@ -2266,9 +2323,12 @@ function renderCiScan() {
     </div>`;
 }
 
-async function loadCiErrors() {
+async function loadCiErrors(runId) {
   const config = state.ci.config || {};
-  const entry = (config.importedRuns || []).find((item) => String(item.runId) === String(config.lastImportedRunId));
+  const importedRuns = config.importedRuns || [];
+  const selectedId = runId || state.ci.selectedRunId || config.lastImportedRunId;
+  const entry = importedRuns.find((item) => String(item.runId) === String(selectedId));
+  state.ci.selectedRunId = entry ? String(entry.runId) : null;
   const paths = [entry && entry.reportPath, entry && entry.cucumberPath].filter(Boolean);
   state.ci.errors = [];
   if (paths.length === 0) return;
@@ -2292,15 +2352,71 @@ async function loadCiErrors() {
   }
 }
 
+async function selectCiImported(runId) {
+  await loadCiErrors(runId);
+  renderCiErrors();
+}
+
+function renderCiImported() {
+  const card = $('#ci-imported-card');
+  const list = $('#ci-imported-list');
+  const count = $('#ci-imported-count');
+  if (!card || !list) return;
+  const runs = (state.ci.config && state.ci.config.importedRuns) || [];
+  card.hidden = runs.length === 0;
+  if (count) count.textContent = num(runs.length);
+  list.innerHTML = runs.map((entry) => {
+    const date = entry.importedAt ? fmtDateShort(Date.parse(entry.importedAt)) : '—';
+    const reportLink = entry.reportPath
+      ? `<a class="btn" href="/${esc(entry.reportPath)}" target="_blank" rel="noopener">${esc(t('ci.imported.viewReport'))}</a>`
+      : '';
+    return `
+      <article class="ci-run">
+        <div class="ci-run-main">
+          <div class="ci-run-title">#${esc(entry.runId)} · ${esc(date)}</div>
+          <div class="ci-run-meta"><span>${esc(entry.scan || '—')}</span></div>
+        </div>
+        <div class="ci-run-actions">
+          ${reportLink}
+          <button type="button" class="btn" data-ci-imported-detail="${esc(entry.runId)}">${esc(t('ci.imported.detail'))}</button>
+          <button type="button" class="btn" data-ci-scan-view="${esc(entry.scan || '')}" ${entry.scan ? '' : 'disabled'}>${esc(t('ci.imported.viewScan'))}</button>
+          <button type="button" class="btn danger" data-ci-imported-delete="${esc(entry.runId)}">${esc(t('ci.imported.delete'))}</button>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+async function deleteCiImported(runId) {
+  if (!runId) return;
+  if (!window.confirm(t('ci.imported.delete') + ' #' + runId + '?')) return;
+  try {
+    const res = await fetch('/api/ci/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || t('ci.imported.delete'));
+    if (String(state.ci.selectedRunId) === String(runId)) state.ci.selectedRunId = null;
+    toast(t('ci.imported.deleted'));
+    await Promise.all([loadCi(), loadOverview(), loadScans(), loadTests(), loadRuns()]);
+  } catch (e) {
+    toast(String(e && e.message ? e.message : e), true);
+  }
+}
+
 function renderCiErrors() {
   const card = $('#ci-errors-card');
   if (!card) return;
   const config = state.ci.config || {};
-  if (!config.lastImportedRunId) {
+  const selectedId = state.ci.selectedRunId || config.lastImportedRunId;
+  if (!selectedId) {
     card.hidden = true;
     return;
   }
   card.hidden = false;
+  const title = $('#ci-errors-title');
+  if (title) title.textContent = `${t('ci.errors.title')} #${selectedId}`;
   renderErrorCards(
     state.ci.errors,
     $('#ci-errors-list'),
@@ -2362,9 +2478,20 @@ function renderCi() {
   } else {
     empty.hidden = true;
     list.innerHTML = state.ci.runs.map((run) => {
-      const imported = String(run.id) === String(cfg.lastImportedRunId);
+      const importedEntry = (cfg.importedRuns || []).find((item) => String(item.runId) === String(run.id));
+      const imported = Boolean(importedEntry);
       const date = run.createdAt ? fmtDateShort(Date.parse(run.createdAt)) : '—';
       const status = ciStatusValue(run);
+      const reportLink = importedEntry && importedEntry.reportPath
+        ? `<a class="btn" href="/${esc(importedEntry.reportPath)}" target="_blank" rel="noopener">${esc(t('ci.imported.viewReport'))}</a>`
+        : '';
+      const importedActions = imported
+        ? `${reportLink}
+           <button type="button" class="btn" data-ci-imported-detail="${esc(importedEntry.runId)}">${esc(t('ci.imported.detail'))}</button>
+           <button type="button" class="btn danger" data-ci-imported-delete="${esc(importedEntry.runId)}" title="${esc(t('ci.imported.delete'))}" aria-label="${esc(t('ci.imported.delete'))}">×</button>`
+        : `<button type="button" class="btn ${status === 'success' ? 'primary' : ''}" data-ci-import="${esc(run.id)}" ${status !== 'success' || state.ci.importing ? 'disabled' : ''}>
+             ${esc(t('ci.import.run'))}
+           </button>`;
       return `
         <article class="ci-run ${imported ? 'is-imported' : ''}">
           <div class="ci-run-main">
@@ -2381,9 +2508,7 @@ function renderCi() {
           </div>
           <div class="ci-run-actions">
             ${run.htmlUrl ? `<a class="btn ghost" href="${esc(run.htmlUrl)}" target="_blank" rel="noopener">${esc(t('ci.open'))}</a>` : ''}
-            <button type="button" class="btn ${status === 'success' ? 'primary' : ''}" data-ci-import="${esc(run.id)}" ${status !== 'success' || state.ci.importing ? 'disabled' : ''}>
-              ${esc(t('ci.import.run'))}
-            </button>
+            ${importedActions}
           </div>
         </article>`;
     }).join('');
@@ -2401,6 +2526,7 @@ function renderCi() {
   }
 
   renderCiScan();
+  renderCiImported();
   renderCiErrors();
 }
 
@@ -2483,6 +2609,14 @@ async function startCiRun() {
   state.ci.dispatching = true;
   renderCi();
   if (status) status.textContent = t('ci.run.dispatching');
+  const progressWrap = $('#ci-run-progress-wrap');
+  const progress = $('#ci-run-progress');
+  const progressLabel = $('#ci-run-progress-label');
+  if (progressWrap && progress) {
+    progressWrap.hidden = false;
+    progress.value = 10;
+    if (progressLabel) progressLabel.textContent = t('ci.run.dispatching');
+  }
 
   const knownIds = new Set(state.ci.runs.map((run) => String(run.id)));
   const scanType = ($('#ci-run-scan-type') && $('#ci-run-scan-type').value) || 'all';
@@ -2507,6 +2641,8 @@ async function startCiRun() {
     state.ci.dispatching = false;
     renderCi();
     if (status) status.textContent = '';
+    const progressWrap = $('#ci-run-progress-wrap');
+    if (progressWrap) progressWrap.hidden = true;
     toast(String(e && e.message ? e.message : t('ci.run.error')), true);
   }
 }
@@ -2524,8 +2660,12 @@ async function pollCiRun(knownIds, attempt) {
   await loadCi();
   const newRun = state.ci.runs.find((run) => !knownIds.has(String(run.id)));
   const status = $('#ci-run-status');
+  const progress = $('#ci-run-progress');
+  const progressLabel = $('#ci-run-progress-label');
   if (newRun) {
     if (status) status.textContent = `${t('ci.run.waiting')} #${newRun.runNumber || newRun.id}`;
+    if (progress) progress.value = newRun.status === 'completed' ? 100 : 50;
+    if (progressLabel) progressLabel.textContent = newRun.status === 'completed' ? t('ci.run.done') : t('ci.run.waiting');
     if (newRun.status === 'completed') {
       state.ci.dispatching = false;
       renderCi();
@@ -2533,6 +2673,9 @@ async function pollCiRun(knownIds, attempt) {
       toast(t('ci.run.done'));
       return;
     }
+  } else {
+    if (progress) progress.value = 20;
+    if (progressLabel) progressLabel.textContent = t('ci.run.waiting');
   }
 
   ciRunPollTimer = setTimeout(() => pollCiRun(knownIds, attempt + 1), 10000);
@@ -2552,6 +2695,7 @@ async function importCi(runId, silent) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || t('ci.import.error'));
 
+    state.ci.selectedRunId = String(data.runId);
     await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCiScan()]);
     toast(t('ci.import.ok'));
     await loadCi();
@@ -2711,7 +2855,11 @@ function bind() {
     const copy = event.target.closest('[data-copy]');
     if (copy) copyText(copy.dataset.copy);
     const ciScan = event.target.closest('[data-ci-scan-view]');
-    if (ciScan) openScan('scan-report/ci-scan.json');
+    if (ciScan) openScan(ciScan.dataset.ciScanView || 'scan-report/ci-scan.json');
+    const ciDetail = event.target.closest('[data-ci-imported-detail]');
+    if (ciDetail) selectCiImported(ciDetail.dataset.ciImportedDetail);
+    const ciDelete = event.target.closest('[data-ci-imported-delete]');
+    if (ciDelete) deleteCiImported(ciDelete.dataset.ciImportedDelete);
     const latest = event.target.closest('[data-run-latest]');
     if (latest) clearSelectedRun(latest.dataset.runLatest);
     if (event.target.closest('#home-show-all')) {

@@ -162,6 +162,10 @@
           <button type="button" id="scan-start" class="btn primary" data-i18n="scans.create.start">Ejecutar auditoría</button>
           <button type="button" id="scan-cancel" class="btn danger" data-i18n="scans.create.cancel" hidden>Cancelar</button>
         </div>
+        <div id="scan-progress-wrap" class="scan-progress-wrap" hidden>
+          <progress id="scan-progress" max="100" value="0"></progress>
+          <span id="scan-progress-label" class="muted"></span>
+        </div>
         <p id="scan-job-status" class="muted"></p>
         <pre id="scan-job-log" class="output" hidden></pre>
       </div>
@@ -437,15 +441,29 @@
               </div>
             </details>
             <p id="ci-run-status" class="muted"></p>
+            <div id="ci-run-progress-wrap" class="scan-progress-wrap" hidden>
+              <progress id="ci-run-progress" max="100" value="0"></progress>
+              <span id="ci-run-progress-label" class="muted"></span>
+            </div>
             <div id="ci-runs" class="list"></div>
             <p id="ci-empty" class="empty" hidden></p>
           </section>
         </div>
 
+        <section id="ci-imported-card" class="card" hidden>
+          <div class="card-head">
+            <div class="card-head-title">
+              <h3 data-i18n="ci.imported.title">Reportes importados</h3>
+              <span id="ci-imported-count" class="badge"></span>
+            </div>
+          </div>
+          <div id="ci-imported-list" class="list"></div>
+        </section>
+
         <section id="ci-errors-card" class="card" hidden>
           <div class="card-head">
             <div class="card-head-title">
-              <h3 data-i18n="ci.errors.title">Errores del reporte importado</h3>
+              <h3 id="ci-errors-title" data-i18n="ci.errors.title">Errores del reporte importado</h3>
               <span id="ci-errors-count" class="badge fail"></span>
             </div>
           </div>

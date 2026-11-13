@@ -246,6 +246,17 @@ function createGithubActions(options) {
       .filter((name) => /^defectos-.*\.md$/i.test(name))
       .sort()
       .pop();
+    let summaryPath = null;
+    for (const name of entries.filter((item) => item.toLowerCase().endsWith('.json'))) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(source, name), 'utf8'));
+        if (data && data.metadata) {
+          summaryPath = 'reports/' + name;
+          break;
+        }
+      } catch { /* no es un resumen */ }
+    }
+
     return {
       reportPath: playwrightDir
         ? 'reports/' + path.posix.join(playwrightDir, 'index.html')
@@ -253,7 +264,8 @@ function createGithubActions(options) {
       cucumberPath: cucumberHtml
         ? 'reports/' + path.relative(source, cucumberHtml).replace(/\\/g, '/')
         : null,
-      defectPath: defectFile ? 'reports/' + defectFile : null
+      defectPath: defectFile ? 'reports/' + defectFile : null,
+      summaryPath
     };
   }
 
@@ -371,7 +383,55 @@ function createGithubActions(options) {
     }
   }
 
-  return { publicConfig, listRuns, dispatchRun, importRun };
+  function deleteImportedRun(runId) {
+    const current = state();
+    const importedRuns = Array.isArray(current.importedRuns) ? current.importedRuns : [];
+    const entry = importedRuns.find((item) => String(item.runId) === String(runId));
+    if (!entry) throw new Error('La ejecución importada no existe.');
+
+    const removed = [];
+    const reportsRoot = path.resolve(root, 'reports') + path.sep;
+    const removeFile = (rel) => {
+      if (!rel) return;
+      const full = path.resolve(root, rel);
+      if (!full.startsWith(reportsRoot) && full !== path.resolve(root, entry.scan || '')) return;
+      try {
+        if (fs.existsSync(full)) {
+          fs.rmSync(full, { recursive: true, force: true });
+          removed.push(rel);
+        }
+      } catch { /* ignore */ }
+    };
+
+    if (entry.reportPath) {
+      removeFile(path.dirname(entry.reportPath).replace(/\\/g, '/'));
+    }
+    removeFile(entry.scan);
+    removeFile(entry.defectPath);
+    removeFile(entry.summaryPath);
+
+    // El reporte Cucumber suele ser compartido entre importaciones; solo se
+    // elimina si ninguna otra ejecución importada lo referencia.
+    if (entry.cucumberPath) {
+      const shared = importedRuns.some((item) => String(item.runId) !== String(runId)
+        && item.cucumberPath === entry.cucumberPath);
+      if (!shared) removeFile(entry.cucumberPath);
+    }
+
+    const next = {
+      ...current,
+      importedRuns: importedRuns.filter((item) => String(item.runId) !== String(runId))
+    };
+    if (String(next.lastImportedRunId) === String(runId)) {
+      const remaining = next.importedRuns[0];
+      next.lastImportedRunId = remaining ? remaining.runId : null;
+      next.lastImportedAt = remaining ? remaining.importedAt : null;
+    }
+    saveState(next);
+    return { ok: true, runId: Number(runId), removed };
+  }
+
+  return { publicConfig, listRuns, dispatchRun, importRun, deleteImportedRun };
 }
 
 module.exports = { createGithubActions };

@@ -101,6 +101,27 @@ jobs:
       - name: Validar TypeScript
         run: npx tsc --noEmit
 
+      - name: Validar URL pública
+        env:
+          TARGET_URL: ${{ inputs.target_url || 'https://scrapethissite.com/' }}
+        run: |
+          node -e "
+            const u = new URL(process.env.TARGET_URL);
+            const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+            const p = h.split('.').map(Number);
+            const privateIp = p.length === 4 && p.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) && (
+              p[0] === 10 || p[0] === 127 ||
+              (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
+              (p[0] === 192 && p[1] === 168) ||
+              (p[0] === 169 && p[1] === 254)
+            );
+            if (['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(h) || h.endsWith('.local') || privateIp) {
+              console.error('GitHub Actions no puede acceder a localhost ni a una URL privada. Usa un túnel público o una URL accesible desde Internet.');
+              process.exit(1);
+            }
+            console.log('URL remota válida:', u.toString());
+          "
+
       - name: Ejecutar crawler
         run: >
           npx ts-node --transpile-only crawler.ts
@@ -111,6 +132,18 @@ jobs:
           --concurrency=3
           --headless
           --output=scan-report/ci-scan.json
+
+      - name: Validar scan generado
+        run: |
+          node -e "
+            const fs = require('fs');
+            const scan = JSON.parse(fs.readFileSync('scan-report/ci-scan.json', 'utf8'));
+            if (!Array.isArray(scan.links) || scan.links.length === 0) {
+              console.error('El scan no encontró enlaces. Verifica que la URL sea pública y accesible desde GitHub Actions.');
+              process.exit(1);
+            }
+            console.log('Scan válido. Páginas:', scan.totalPages, 'Enlaces:', scan.links.length);
+          "
 
       - name: Publicar scan JSON
         uses: actions/upload-artifact@v4
