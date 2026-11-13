@@ -1,11 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { browserStackWsEndpoint, browserStackBuildName, DEFAULT_BROWSERSTACK_TARGETS, hasBrowserStackCredentials } from './core/browserstack';
 
 // Cargar variables de entorno
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-const isBrowserStack = process.env.BROWSERSTACK_USERNAME && process.env.BROWSERSTACK_ACCESS_KEY;
+// BrowserStack solo se activa de forma explícita. Tener credenciales en .env
+// no cambia el comportamiento de una ejecución local normal.
+const isBrowserStack = process.env.CACHAI_BROWSERSTACK === '1' && hasBrowserStackCredentials();
+const browserStackBuild = process.env.CACHAI_BROWSERSTACK_BUILD || browserStackBuildName();
 
 const baseConfig = {
   testDir: './tests',
@@ -39,23 +43,21 @@ const localProjects = [
   }
 ];
 
-const bsProjects = (process.env.BROWSERSTACK_BROWSERS ? JSON.parse(process.env.BROWSERSTACK_BROWSERS) : [
-  { browser: 'chrome', os: 'Windows 10' },
-  { browser: 'firefox', os: 'Windows 10' }
-]).map((b: any, i: number) => ({
-  name: `bs-${b.browser}-${b.os}`,
+const browserStackProjects = isBrowserStack ? DEFAULT_BROWSERSTACK_TARGETS.map((target) => ({
+  name: `bs-${target.id}`,
   use: {
-    browserName: b.browser === 'chrome' ? 'chromium' : b.browser === 'firefox' ? 'firefox' : 'webkit',
+    browserName: 'chromium' as const,
     viewport: { width: 1280, height: 720 },
+    connectOptions: {
+      wsEndpoint: browserStackWsEndpoint(target, {
+        buildName: browserStackBuild,
+        sessionName: `CACHAI-QA · ${target.label}`
+      })
+    }
   }
-}));
+})) : [];
 
 export default defineConfig({
   ...baseConfig,
-  projects: isBrowserStack ? bsProjects : localProjects,
-  // Configuración específica para BrowserStack
-  ...(isBrowserStack && {
-    // BrowserStack requiere configuración vía variables de entorno o playwright.config
-    // Las credenciales se pasan via BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY
-  })
+  projects: isBrowserStack ? browserStackProjects : localProjects
 });

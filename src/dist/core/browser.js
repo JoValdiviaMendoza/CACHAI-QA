@@ -7,6 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BrowserManager = void 0;
 exports.createBrowserManager = createBrowserManager;
 const test_1 = require("@playwright/test");
+const browserstack_1 = require("./browserstack");
 class BrowserManager {
     crawlConfig;
     browserstackConfig;
@@ -63,10 +64,19 @@ class BrowserManager {
      * Inicializa sesión en BrowserStack
      */
     async initializeBrowserStack() {
-        const { username, accessKey } = this.browserstackConfig;
-        const caps = this.buildBrowserStackCapabilities();
-        const wsEndpoint = `wss://${username}:${accessKey}@hub-cloud.browserstack.com/playwright/${caps}`;
-        this.browser = await test_1.chromium.connectOverCDP(wsEndpoint, {
+        const target = (0, browserstack_1.resolveBrowserStackTargetFromConfig)(this.targetBrowserConfig);
+        const env = {
+            ...process.env,
+            BROWSERSTACK_USERNAME: this.browserstackConfig.username,
+            BROWSERSTACK_ACCESS_KEY: this.browserstackConfig.accessKey
+        };
+        const wsEndpoint = (0, browserstack_1.browserStackWsEndpoint)(target, {
+            buildName: this.browserstackConfig.buildName,
+            sessionName: `CACHAI-QA Scan · ${target.label}`
+        }, env);
+        // BrowserStack expone Playwright mediante su endpoint CDP; se debe usar
+        // chromium.connect (no connectOverCDP) para conservar el protocolo de Playwright.
+        this.browser = await test_1.chromium.connect(wsEndpoint, {
             headers: {
                 'User-Agent': this.crawlConfig.userAgent || 'CACHAI-QA/1.0'
             }
@@ -85,42 +95,6 @@ class BrowserManager {
                 this.context = null;
             }
         };
-    }
-    /**
-     * Construye capabilities para BrowserStack
-     */
-    buildBrowserStackCapabilities() {
-        const { projectName, buildName, sessionTimeout, video, networkLogs, consoleLogs } = this.browserstackConfig;
-        const browserConfig = this.targetBrowserConfig;
-        const caps = {
-            'browserstack.username': this.browserstackConfig.username,
-            'browserstack.accessKey': this.browserstackConfig.accessKey,
-            project: projectName,
-            build: buildName,
-            name: `CACHAI-QA Scan - ${new Date().toISOString()}`,
-            'browserstack.debug': true,
-            'browserstack.video': video,
-            'browserstack.networkLogs': networkLogs,
-            'browserstack.console': consoleLogs ? 'errors' : 'disable',
-            'browserstack.sessionTimeout': sessionTimeout,
-            'browserstack.local': false
-        };
-        // Configuración de navegador/SO
-        if (browserConfig.device) {
-            caps.device = browserConfig.device;
-            caps.realMobile = browserConfig.real_mobile || false;
-        }
-        else {
-            caps.browser = browserConfig.browser;
-            if (browserConfig.browser_version)
-                caps.browser_version = browserConfig.browser_version;
-            caps.os = browserConfig.os;
-            if (browserConfig.os_version)
-                caps.os_version = browserConfig.os_version;
-        }
-        // Viewport
-        caps.resolution = `${this.crawlConfig.viewport.width}x${this.crawlConfig.viewport.height}`;
-        return encodeURIComponent(JSON.stringify(caps));
     }
     /**
      * Obtiene el tipo de navegador Playwright

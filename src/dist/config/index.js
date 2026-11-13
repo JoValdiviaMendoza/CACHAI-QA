@@ -44,6 +44,7 @@ exports.ensureReportDir = ensureReportDir;
 const dotenv = __importStar(require("dotenv"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const browserstack_1 = require("../core/browserstack");
 // Cargar variables de entorno
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 /**
@@ -78,23 +79,6 @@ function parseList(value, defaultValue = []) {
     if (!value)
         return defaultValue;
     return value.split(',').map(v => v.trim()).filter(v => v.length > 0);
-}
-/**
- * Parsea configuración de navegadores BrowserStack
- */
-function parseBrowserStackBrowsers(value) {
-    if (!value)
-        return [];
-    try {
-        return JSON.parse(value);
-    }
-    catch {
-        // Fallback: formato simple "chrome:Windows 10,firefox:Windows 10"
-        return value.split(',').map(pair => {
-            const [browser, os] = pair.split(':').map(s => s.trim());
-            return { browser: browser, os };
-        });
-    }
 }
 /**
  * Normaliza una URL: antepone https:// si falta el esquema
@@ -165,17 +149,24 @@ function loadConfig(skipBrowserStackValidation = false) {
         requestDelay: getEnvNumber('REQUEST_DELAY', 500),
         respectRobotsTxt: getEnvBoolean('RESPECT_ROBOTS_TXT', true)
     };
-    // Configuración BrowserStack
+    // Configuración BrowserStack. El usuario solo completa las credenciales;
+    // proyecto, build y navegadores usan valores automáticos.
+    const browserStackCredentials = (0, browserstack_1.getBrowserStackCredentials)();
     const browserstack = {
-        username: getEnv('BROWSERSTACK_USERNAME'),
-        accessKey: getEnv('BROWSERSTACK_ACCESS_KEY'),
-        projectName: getEnv('BROWSERSTACK_PROJECT_NAME', 'CACHAI-QA'),
-        buildName: getEnv('BROWSERSTACK_BUILD_NAME', `cachai-qa-${Date.now()}`),
-        browsers: parseBrowserStackBrowsers(getEnv('BROWSERSTACK_BROWSERS')),
-        sessionTimeout: getEnvNumber('BROWSERSTACK_SESSION_TIMEOUT', 300),
-        video: getEnvBoolean('BROWSERSTACK_VIDEO', true),
-        networkLogs: getEnvBoolean('BROWSERSTACK_NETWORK_LOGS', true),
-        consoleLogs: getEnvBoolean('BROWSERSTACK_CONSOLE_LOGS', true)
+        username: browserStackCredentials ? browserStackCredentials.username : '',
+        accessKey: browserStackCredentials ? browserStackCredentials.accessKey : '',
+        projectName: 'CACHAI-QA',
+        buildName: (0, browserstack_1.browserStackBuildName)(),
+        browsers: browserstack_1.DEFAULT_BROWSERSTACK_TARGETS.map((target) => ({
+            browser: target.browser,
+            browser_version: target.browser_version,
+            os: target.os,
+            os_version: target.os_version
+        })),
+        sessionTimeout: 300,
+        video: true,
+        networkLogs: true,
+        consoleLogs: true
     };
     // Configuración de generación de pruebas
     const testGeneration = {

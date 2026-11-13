@@ -891,6 +891,33 @@ td code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5
 .browserstack-card h3 { font-size: 18px; }
 .browserstack-card p { max-width: 640px; margin: 8px auto 0; line-height: 1.6; }
 
+.browserstack-summary { padding: 18px; }
+.browserstack-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.browserstack-head .logo-big { font-size: 38px; }
+.browserstack-head h3 { margin: 0 0 2px; font-size: 18px; }
+.browserstack-head p { margin: 0; }
+.browserstack-head .badge { margin-left: auto; }
+.browserstack-defaults { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.browserstack-runs { display: grid; gap: 10px; }
+.browserstack-run {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.browserstack-run-main { min-width: 0; flex: 1; }
+.browserstack-run-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.browserstack-run-main .scan-url { margin: 4px 0; }
+.browserstack-run-main .muted { margin: 0; font-size: 12px; }
+.browserstack-run-browsers { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.browserstack-run-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#scan-provider-hint { flex-basis: 100%; font-size: 11px; line-height: 1.4; }
+
 /* ==================================================================
  * Página de privacidad y pie de página
  * ================================================================== */

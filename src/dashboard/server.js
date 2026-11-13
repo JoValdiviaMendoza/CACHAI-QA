@@ -31,6 +31,25 @@ const githubActions = createGithubActions({
   ref: process.env.GITHUB_CI_REF || 'main',
   autoImport: /^(1|true|yes)$/i.test(process.env.GITHUB_CI_AUTO_IMPORT || '')
 });
+
+const BROWSERSTACK_DEFAULTS = [
+  { id: 'chromium', label: 'Chrome · Windows 11' },
+  { id: 'firefox', label: 'Firefox · Windows 11' },
+  { id: 'webkit', label: 'WebKit/Safari · macOS Sonoma' }
+];
+
+/** Estado público de BrowserStack. Nunca expone usuario ni access key. */
+function browserStackStatus() {
+  const username = String(process.env.BROWSERSTACK_USERNAME || '').trim();
+  const accessKey = String(process.env.BROWSERSTACK_ACCESS_KEY || '').trim();
+  const placeholder = (value) => /^(tu_usuario_browserstack|tu_access_key_browserstack|your_|username$|access_key$)/i.test(value);
+  const configured = Boolean(username && accessKey && !placeholder(username) && !placeholder(accessKey));
+  return {
+    configured,
+    project: 'CACHAI-QA',
+    defaults: BROWSERSTACK_DEFAULTS
+  };
+}
 const SCAN_DIRS = [ROOT, path.join(ROOT, 'reports'), path.join(ROOT, 'scan-report')];
 const EXCLUDED = new Set(['package.json', 'package-lock.json', 'tsconfig.json', 'results.json']);
 const MAX_PARSE_BYTES = 25 * 1024 * 1024;
@@ -983,6 +1002,16 @@ function readPlaywrightRunDetail(reportPath) {
   const reportDir = path.dirname(full);
   const stats = readPlaywrightReportStats(reportDir);
   const bundle = readPlaywrightReportBundle(reportDir);
+  let browserstack = null;
+  const slug = path.basename(reportDir).replace(/^playwright-report-/, '');
+  const bsMetaPaths = [
+    path.join(path.dirname(reportDir), `browserstack-${slug}.json`),
+    path.join(reportDir, 'browserstack.json')
+  ];
+  for (const bsMetaPath of bsMetaPaths) {
+    if (!fs.existsSync(bsMetaPath)) continue;
+    try { browserstack = readJsonFile(bsMetaPath); break; } catch { /* metadatos ilegibles */ }
+  }
   const summary = frameworkSummaryNear(st.mtimeMs);
   const targetUrl = (summary && summary.url) || (stats && stats.url) || '';
   const errorsList = playwrightErrorsFromReport(bundle, targetUrl, reportDir);
@@ -996,6 +1025,8 @@ function readPlaywrightRunDetail(reportPath) {
   return {
     available: true,
     type: 'playwright',
+    provider: browserstack ? 'browserstack' : 'local',
+    browserstack,
     reportPath,
     timestamp: st.mtimeMs,
     startedAt: new Date(st.mtimeMs).toISOString(),
@@ -1092,6 +1123,13 @@ function deleteRunArtifacts(run) {
     const latest = latestPlaywrightReport();
     const dir = path.join(ROOT, 'reports', run.id);
     if (fs.existsSync(dir) && removePathRecursive(dir)) deleted.push('reports/' + run.id);
+
+    if (run.slug) {
+      const bsMeta = path.join(ROOT, 'reports', `browserstack-${run.slug}.json`);
+      if (fs.existsSync(bsMeta)) {
+        try { fs.unlinkSync(bsMeta); deleted.push(`reports/browserstack-${run.slug}.json`); } catch { /* ignorar */ }
+      }
+    }
 
     // results.json representa la última ejecución; solo se borra si esta
     // ejecución es efectivamente la más reciente.
@@ -1365,10 +1403,22 @@ function listTestRuns() {
       if (!fs.existsSync(idx)) continue;
       const st = safeStat(idx);
       const slug = name.substring('playwright-report-'.length);
+      let browserstack = null;
+      const bsMetaPaths = [
+        path.join(reportsDir, `browserstack-${slug}.json`),
+        path.join(reportsDir, name, 'browserstack.json')
+      ];
+      for (const bsMetaPath of bsMetaPaths) {
+        if (!fs.existsSync(bsMetaPath)) continue;
+        try { browserstack = readJsonFile(bsMetaPath); break; } catch { /* metadatos ilegibles */ }
+      }
       runs.push({
         id: name,
         slug,
         type: 'playwright',
+        provider: browserstack ? 'browserstack' : 'local',
+        browserstack,
+        url: browserstack && browserstack.targetUrl ? browserstack.targetUrl : undefined,
         startedAt: parseSlugDate(slug),
         mtime: st ? st.mtimeMs : 0,
         reportPath: 'reports/' + name + '/index.html'
@@ -1520,6 +1570,8 @@ let localAuditJob = {
   url: '',
   output: '',
   mode: 'full',
+  provider: 'local',
+  buildName: '',
   scanType: 'all',
   depth: 999,
   maxPages: 999999,
@@ -1572,7 +1624,7 @@ function isLocalTargetUrl(value) {
   }
 }
 
-function runAuditCommand(args, stage) {
+function runAuditCommand(args, stage, extraEnv = {}) {
   return new Promise((resolve) => {
     localAuditJob.stage = stage;
     appendScanLog(`\n▶ ${stage}`);
@@ -1581,7 +1633,8 @@ function runAuditCommand(args, stage) {
       env: {
         ...process.env,
         TS_NODE_TRANSPILE_ONLY: '1',
-        CUCUMBER_PARALLEL: process.env.CUCUMBER_PARALLEL || '2'
+        CUCUMBER_PARALLEL: process.env.CUCUMBER_PARALLEL || '2',
+        ...extraEnv
       },
       windowsHide: true
     });
@@ -1620,18 +1673,28 @@ async function runLocalAudit(job) {
       return;
     }
 
-    const testCode = await runAuditCommand([
+    const useBrowserStack = job.provider === 'browserstack';
+    const playwrightEnv = useBrowserStack
+      ? {
+          CACHAI_BROWSERSTACK: '1',
+          CACHAI_BROWSERSTACK_BUILD: job.buildName,
+          CACHAI_BROWSERSTACK_LOCAL: isLocalTargetUrl(job.url) ? '1' : '0'
+        }
+      : {};
+    const playwrightArgs = [
       '-r', 'ts-node/register/transpile-only',
       'cli/from-scan.ts',
       `--scan=${job.output}`,
       '--run',
-      '--browsers=chromium',
-      '--workers=2',
+      ...(useBrowserStack
+        ? ['--browserstack', '--browsers=chromium,firefox,webkit', '--workers=1']
+        : ['--browsers=chromium', '--workers=2']),
       `--max-links=${job.maxLinks}`,
       '--timeout=60000',
       '--no-prompt',
       '--no-open'
-    ], 'playwright');
+    ];
+    const testCode = await runAuditCommand(playwrightArgs, 'playwright', playwrightEnv);
     if (job.cancelled) return;
     localAuditJob.testsFailed = testCode !== 0;
 
@@ -1679,8 +1742,10 @@ function normalizeAuditOptions(body) {
     if (!Number.isFinite(maxPages) || maxPages < 1) maxPages = 50;
   }
   if (!Number.isFinite(maxLinks) || maxLinks < 1) maxLinks = 40;
+  const provider = body.provider === 'browserstack' ? 'browserstack' : 'local';
   return {
     mode,
+    provider,
     scanType,
     depth: Math.max(0, Math.min(9999, Math.floor(depth))),
     maxPages: Math.max(1, Math.min(999999, Math.floor(maxPages))),
@@ -1703,12 +1768,17 @@ function startLocalAudit(body) {
   if (localAuditJob.running) throw new Error('Ya hay una auditoría en curso.');
   const options = normalizeAuditOptions(body || {});
 
+  if (options.provider === 'browserstack' && !browserStackStatus().configured) {
+    throw new Error('BrowserStack requiere BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env.');
+  }
+
   const output = `scan-report/${targetSlug(targetUrl)}-${options.mode}-${formatSlug(Date.now())}.json`;
   localAuditJob = {
     running: true,
     url: targetUrl,
     output,
     ...options,
+    buildName: options.provider === 'browserstack' ? `cachai-qa-${formatSlug(Date.now())}` : '',
     stage: 'scan',
     stages: ['scan', 'playwright', 'cucumber', 'reportes'],
     startedAt: new Date().toISOString(),
@@ -1752,6 +1822,8 @@ function localAuditStatus() {
     url: localAuditJob.url,
     output: localAuditJob.output,
     mode: localAuditJob.mode,
+    provider: localAuditJob.provider || 'local',
+    buildName: localAuditJob.buildName || '',
     scanType: localAuditJob.scanType,
     depth: localAuditJob.depth,
     maxPages: localAuditJob.maxPages,
@@ -1874,6 +1946,10 @@ async function handle(req, res) {
   if (pathname === '/api/runs' && method === 'GET') {
     try { return sendJson(res, 200, { runs: listTestRuns() }); }
     catch (e) { return sendJson(res, 500, { error: String(e) }); }
+  }
+
+  if (pathname === '/api/browserstack/status' && method === 'GET') {
+    return sendJson(res, 200, browserStackStatus());
   }
 
   if (pathname === '/api/audit/status' && method === 'GET') {

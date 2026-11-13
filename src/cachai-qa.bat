@@ -234,12 +234,23 @@ if not exist "scan-report\!TARGET_JSON!" (
 call :ASK_ENGINE
 if "%ENGINE%"=="" goto MENU
 
+call :ASK_PROVIDER
+
 echo.
 echo Procesando escaneo: !TARGET_JSON!
 echo Motor seleccionado: %ENGINE%
+echo Entorno: %PROVIDER%
 echo Navegadores Playwright: %PW_BROWSERS%
 echo Workers Playwright: %PW_WORKERS% ^| Workers Cucumber: %CUCUMBER_PARALLEL%
+if "%PROVIDER%"=="browserstack" (
+    echo.
+    echo [i] BrowserStack ejecutara Playwright en la nube.
+    echo [i] Cucumber se ejecutara local. Se usara tunel automatico si la URL es local.
+)
 echo.
+
+set "BSFLAG="
+if "%PROVIDER%"=="browserstack" set "BSFLAG=--browserstack"
 
 if "%ENGINE%"=="cucumber" (
     call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --verbose --no-prompt --no-open
@@ -257,13 +268,13 @@ if "%ENGINE%"=="cucumber" (
 )
 
 if "%ENGINE%"=="playwright" (
-    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS%
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS% %BSFLAG%
     call node cli\report-defects.js playwright --scan="scan-report\!TARGET_JSON!"
     if errorlevel 1 echo [AVISO] No se genero el reporte de defectos: revisa el scan seleccionado.
 )
 
 if "%ENGINE%"=="both" (
-    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS%
+    call "node_modules\.bin\ts-node.cmd" cli\from-scan.ts --scan="scan-report\!TARGET_JSON!" --run --verbose --no-prompt --no-open --browsers=%PW_BROWSERS% --workers=%PW_WORKERS% %BSFLAG%
     if not exist "reports\cucumber" mkdir "reports\cucumber"
     echo.
     echo Esperando 5 s antes de Cucumber para no saturar el sitio...
@@ -319,6 +330,32 @@ if "%ENGINEOPT%"=="" set "ENGINE=cucumber"
 if "%ENGINEOPT%"=="1" set "ENGINE=cucumber"
 if "%ENGINEOPT%"=="2" set "ENGINE=playwright"
 if "%ENGINEOPT%"=="3" set "ENGINE=both"
+exit /b
+
+:ASK_PROVIDER
+set "PROVIDER=local"
+rem BrowserStack solo aplica a Playwright en este flujo.
+if /i "%ENGINE%"=="cucumber" exit /b
+set "BS_USER="
+set "BS_KEY="
+if exist ".env" (
+    for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+        if /i "%%A"=="BROWSERSTACK_USERNAME" set "BS_USER=%%B"
+        if /i "%%A"=="BROWSERSTACK_ACCESS_KEY" set "BS_KEY=%%B"
+    )
+)
+if "%BS_USER%"=="" exit /b
+if "%BS_KEY%"=="" exit /b
+if /i "%BS_USER%"=="tu_usuario_browserstack" exit /b
+if /i "%BS_KEY%"=="tu_access_key_browserstack" exit /b
+echo.
+echo Entorno de ejecucion:
+echo    [1] Local
+echo    [2] BrowserStack (nube)
+set "BSOPT="
+set /p BSOPT="Elige entorno [1-2] (Enter = 1): "
+if "%BSOPT%"=="2" set "PROVIDER=browserstack"
+if "%PROVIDER%"=="browserstack" set "PW_BROWSERS=chromium,firefox,webkit"
 exit /b
 
 :DASHBOARD

@@ -18,6 +18,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * CACHAI-QA - Core Module Exports
  */
 __exportStar(require("./browser"), exports);
+__exportStar(require("./browserstack"), exports);
 __exportStar(require("./scanner"), exports);
 __exportStar(require("./generator"), exports);
 //# sourceMappingURL=index.js.map

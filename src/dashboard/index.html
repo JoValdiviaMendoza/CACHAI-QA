@@ -136,6 +136,12 @@
             <option value="full" selected data-i18n="scans.filter.full">🌐 Completo</option>
             <option value="custom" data-i18n="scans.filter.custom">🎯 Personalizado</option>
           </select>
+          <label for="scan-provider" data-i18n="scans.create.provider">Entorno</label>
+          <select id="scan-provider" class="input">
+            <option value="local" data-i18n="scans.create.provider.local">Local</option>
+            <option value="browserstack" data-i18n="scans.create.provider.browserstack">BrowserStack (nube)</option>
+          </select>
+          <span id="scan-provider-hint" class="muted" data-i18n="scans.create.provider.hint"></span>
         </div>
         <div id="scan-custom" class="scan-custom-row" hidden>
           <label>
@@ -346,10 +352,28 @@
 
       <!-- BrowserStack -->
       <div id="run-panel-browserstack" class="run-subpanel">
-        <div class="card browserstack-card">
-          <div class="logo-big" aria-hidden="true">☁️</div>
-          <h3 data-i18n="runs.browserstack.title">BrowserStack</h3>
-          <p class="muted" data-i18n="runs.browserstack.soon">Integración con BrowserStack en desarrollo. Próximamente podrás visualizar aquí los resultados de las pruebas ejecutadas en la nube sobre múltiples navegadores y dispositivos reales.</p>
+        <div class="card browserstack-summary">
+          <div class="browserstack-head">
+            <div class="logo-big" aria-hidden="true">☁️</div>
+            <div>
+              <h3 data-i18n="runs.browserstack.title">BrowserStack</h3>
+              <p id="browserstack-status-text" class="muted"></p>
+            </div>
+            <span id="browserstack-status-badge" class="badge"></span>
+          </div>
+          <div id="browserstack-defaults" class="browserstack-defaults"></div>
+          <p class="muted" data-i18n="runs.browserstack.hint">Para ejecutar en la nube solo agrega BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env. El proyecto, la build y los navegadores se configuran automáticamente.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h3 data-i18n="runs.browserstack.history">Ejecuciones en la nube</h3>
+              <span id="browserstack-runs-count" class="badge"></span>
+            </div>
+          </div>
+          <div id="runs-list-browserstack" class="browserstack-runs"></div>
+          <p id="runs-empty-browserstack" class="empty" hidden data-i18n="runs.browserstack.empty">Todavía no hay ejecuciones en BrowserStack.</p>
         </div>
       </div>
     </section>

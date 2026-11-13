@@ -32,7 +32,7 @@ export interface BrowserStackConfig {
     consoleLogs: boolean;
 }
 export interface BrowserStackBrowserConfig {
-    browser: 'chrome' | 'firefox' | 'safari' | 'edge';
+    browser: string;
     browser_version?: string;
     os: string;
     os_version?: string;

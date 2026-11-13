@@ -19,6 +19,7 @@ const state = {
   aboutTab: 'how',
   scanFavorites: [],
   scanJob: null,
+  browserstack: null,
   selectedRun: { playwright: null, cucumber: null },
   runDetail: { playwright: null, cucumber: null },
   runDetailLoading: { playwright: false, cucumber: false },
@@ -160,6 +161,11 @@ const I18N = {
     'scans.empty': 'No hay escaneos en esta categoría.',
     'scans.create.title': 'Nueva auditoría local completa',
     'scans.create.help': 'Ingresa una URL. Se ejecuta crawler, generación, Playwright, Cucumber y reportes.',
+    'scans.create.provider': 'Entorno',
+    'scans.create.provider.local': 'Local',
+    'scans.create.provider.browserstack': 'BrowserStack (nube)',
+    'scans.create.provider.hint': 'BrowserStack ejecuta Playwright en la nube; Cucumber sigue local.',
+    'scans.create.provider.missing': 'Agrega las credenciales en src/.env para habilitar BrowserStack.',
     'scans.create.placeholder': 'https://ejemplo.com',
     'scans.create.start': 'Ejecutar auditoría',
     'scans.create.cancel': 'Cancelar',
@@ -283,7 +289,16 @@ const I18N = {
     'runs.empty.playwright': 'No hay ejecuciones de Playwright.',
     'runs.empty.cucumber': 'No hay reportes de Cucumber.',
     'runs.browserstack.title': 'BrowserStack',
-    'runs.browserstack.soon': 'Integración con BrowserStack en desarrollo. Próximamente podrás visualizar aquí los resultados de las pruebas ejecutadas en la nube sobre múltiples navegadores y dispositivos reales.',
+    'runs.browserstack.configured': 'Credenciales configuradas',
+    'runs.browserstack.notConfigured': 'Faltan credenciales',
+    'runs.browserstack.hint': 'Para ejecutar en la nube solo agrega BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env. El proyecto, la build y los navegadores se configuran automáticamente.',
+    'runs.browserstack.history': 'Ejecuciones en la nube',
+    'runs.browserstack.empty': 'Todavía no hay ejecuciones en BrowserStack.',
+    'runs.browserstack.report': 'Ver reporte',
+    'runs.browserstack.open': 'Abrir en BrowserStack',
+    'runs.browserstack.delete': 'Eliminar ejecución',
+    'runs.browserstack.local': 'Túnel local',
+    'runs.browserstack.cloud': 'Nube',
     'error.location': 'Dirección del error (ubicación)',
     'error.affected': 'URL afectada',
     'error.browser': 'Navegador',
@@ -421,6 +436,11 @@ const I18N = {
     'scans.empty': 'No scans in this category.',
     'scans.create.title': 'New full local audit',
     'scans.create.help': 'Enter a URL. Runs the crawler, test generation, Playwright, Cucumber and reports.',
+    'scans.create.provider': 'Environment',
+    'scans.create.provider.local': 'Local',
+    'scans.create.provider.browserstack': 'BrowserStack (cloud)',
+    'scans.create.provider.hint': 'BrowserStack runs Playwright in the cloud; Cucumber stays local.',
+    'scans.create.provider.missing': 'Add the credentials in src/.env to enable BrowserStack.',
     'scans.create.placeholder': 'https://example.com',
     'scans.create.start': 'Run audit',
     'scans.create.cancel': 'Cancel',
@@ -544,7 +564,16 @@ const I18N = {
     'runs.empty.playwright': 'No Playwright runs.',
     'runs.empty.cucumber': 'No Cucumber reports.',
     'runs.browserstack.title': 'BrowserStack',
-    'runs.browserstack.soon': 'BrowserStack integration is under development. Soon you will be able to view cloud test results across multiple browsers and real devices here.',
+    'runs.browserstack.configured': 'Credentials configured',
+    'runs.browserstack.notConfigured': 'Credentials missing',
+    'runs.browserstack.hint': 'To run in the cloud, just add BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY in src/.env. Project, build and browsers are configured automatically.',
+    'runs.browserstack.history': 'Cloud runs',
+    'runs.browserstack.empty': 'No BrowserStack runs yet.',
+    'runs.browserstack.report': 'View report',
+    'runs.browserstack.open': 'Open on BrowserStack',
+    'runs.browserstack.delete': 'Delete run',
+    'runs.browserstack.local': 'Local tunnel',
+    'runs.browserstack.cloud': 'Cloud',
     'error.location': 'Error location',
     'error.affected': 'Affected URL',
     'error.browser': 'Browser',
@@ -571,13 +600,13 @@ const I18N = {
 
 const ABOUT = {
   es: {
-    intro: 'CACHAI-QA es un framework de auditoría y pruebas automatizadas: escanea un sitio, genera pruebas a partir de lo que encuentra, las ejecuta en varios navegadores y deja la evidencia en reportes y en un dashboard local. También puede ejecutarse en GitHub Actions.',
+    intro: 'CACHAI-QA es un framework de auditoría y pruebas automatizadas: escanea un sitio, genera pruebas a partir de lo que encuentra, las ejecuta en varios navegadores y deja la evidencia en reportes y en un dashboard local. También puede ejecutarse en BrowserStack o en GitHub Actions.',
     howTitle: 'Cómo funciona',
     howSubtitle: 'El flujo actual, de principio a fin.',
     steps: [
       { title: 'Escaneo', text: 'Playwright recorre la URL y guarda páginas, enlaces, formularios e imágenes en un JSON. Puedes elegir un escaneo Rápido, Completo o Personalizado.' },
       { title: 'Generación', text: 'TypeScript transforma ese JSON en un spec de Playwright y en escenarios Gherkin con sus steps de Cucumber. El flujo usa helpers y test.describe; no hay una capa formal de Page Objects.' },
-      { title: 'Ejecución local', text: 'Playwright corre en Chromium, Chrome y Firefox; Cucumber usa Chromium por defecto. La auditoría local del dashboard ejecuta todo el flujo y permite cancelar mientras corre.' },
+      { title: 'Ejecución', text: 'Playwright corre en Chromium, Chrome, Firefox o BrowserStack (Chrome, Firefox y WebKit/Safari); Cucumber usa Chromium por defecto. La auditoría del dashboard permite cancelar mientras corre.' },
       { title: 'Resultados', text: 'Se generan reportes HTML/JSON de ambos motores, métricas, defectos únicos y un dashboard con Inicio, Escaneos, Ejecuciones y GitHub Actions.' },
       { title: 'GitHub Actions', text: 'El workflow manual permite ejecutar el flujo en la nube, importar sus artefactos, revisar errores y eliminar reportes importados. Requiere token y una URL pública.' }
     ],
@@ -590,7 +619,7 @@ const ABOUT = {
       { name: 'Gherkin + Cucumber', text: 'Escenarios en lenguaje natural y ejecución BDD.', current: true },
       { name: 'GitHub Actions', text: 'Workflow manual, artefactos, importación y reportes remotos.', current: true },
       { name: 'Dashboard local', text: 'Panel de escaneos, ejecuciones, auditoría local y reportes CI.', current: true },
-      { name: 'BrowserStack', text: 'Ejecución en la nube y Safari. Planificado, aún no integrado.', current: false }
+      { name: 'BrowserStack', text: 'Chrome, Firefox y WebKit/Safari en la nube. Solo requiere usuario y access key.', current: true }
     ],
     planned: 'Planificado',
     current: 'En uso',
@@ -650,13 +679,13 @@ const ABOUT = {
     ]
   },
   en: {
-    intro: 'CACHAI-QA is an audit and automated testing framework: it scans a site, generates tests from what it finds, runs them across several browsers and leaves the evidence in reports and a local dashboard. It can also run on GitHub Actions.',
+    intro: 'CACHAI-QA is an audit and automated testing framework: it scans a site, generates tests from what it finds, runs them across several browsers and leaves the evidence in reports and a local dashboard. It can also run on BrowserStack or GitHub Actions.',
     howTitle: 'How it works',
     howSubtitle: 'The current flow, from start to finish.',
     steps: [
       { title: 'Scan', text: 'Playwright walks the URL and stores pages, links, forms and images in a JSON file. You can choose a Quick, Full or Custom scan.' },
       { title: 'Generation', text: 'TypeScript turns that JSON into a Playwright spec and Gherkin scenarios with Cucumber steps. The flow uses helpers and test.describe; there is no formal Page Object layer.' },
-      { title: 'Local execution', text: 'Playwright runs on Chromium, Chrome and Firefox; Cucumber uses Chromium by default. The dashboard local audit runs the whole flow and can be cancelled while running.' },
+      { title: 'Execution', text: 'Playwright runs on Chromium, Chrome, Firefox or BrowserStack (Chrome, Firefox and WebKit/Safari); Cucumber uses Chromium by default. The dashboard audit can be cancelled while running.' },
       { title: 'Results', text: 'HTML/JSON reports from both engines, metrics, unique defects and a dashboard with Home, Scans, Runs and GitHub Actions are produced.' },
       { title: 'GitHub Actions', text: 'The manual workflow runs the flow in the cloud, imports artifacts, reviews errors and deletes imported reports. It requires a token and a public URL.' }
     ],
@@ -669,7 +698,7 @@ const ABOUT = {
       { name: 'Gherkin + Cucumber', text: 'Natural-language scenarios and BDD execution.', current: true },
       { name: 'GitHub Actions', text: 'Manual workflow, artifacts, import and remote reports.', current: true },
       { name: 'Local dashboard', text: 'Scans, runs, local audit and CI reports panel.', current: true },
-      { name: 'BrowserStack', text: 'Cloud execution and Safari. Planned, not integrated yet.', current: false }
+      { name: 'BrowserStack', text: 'Chrome, Firefox and WebKit/Safari in the cloud. Only username and access key required.', current: true }
     ],
     planned: 'Planned',
     current: 'In use',
@@ -857,6 +886,7 @@ function applyLang() {
   renderScans();
   renderTests();
   renderRuns();
+  syncBrowserStackOptions();
   renderCi();
   renderAbout();
 }
@@ -1233,7 +1263,8 @@ function renderScanJob() {
           : t('scans.create.failedBadge');
 
   if (job.running) {
-    status.textContent = `${t('scans.create.running')} ${job.url || ''}${job.stage ? ' · ' + job.stage : ''}`.trim();
+    const provider = job.provider === 'browserstack' ? ' · BrowserStack' : '';
+    status.textContent = `${t('scans.create.running')} ${job.url || ''}${provider}${job.stage ? ' · ' + job.stage : ''}`.trim();
   } else if (job.cancelled) {
     status.textContent = t('scans.create.cancelled');
   } else if (job.error) {
@@ -1312,6 +1343,7 @@ async function startScan() {
   }
 
   const mode = ($('#scan-mode') && $('#scan-mode').value) || 'full';
+  const provider = ($('#scan-provider') && $('#scan-provider').value) || 'local';
   const customType = ($('#scan-custom-type') && $('#scan-custom-type').value) || 'all';
   const customDepth = Number($('#scan-depth') && $('#scan-depth').value);
   const customPages = Number($('#scan-max-pages') && $('#scan-max-pages').value);
@@ -1325,6 +1357,7 @@ async function startScan() {
       body: JSON.stringify({
         url,
         mode,
+        provider,
         scanType: customType,
         depth: customDepth,
         maxPages: customPages
@@ -1894,6 +1927,107 @@ function renderRuns() {
     '#cucumber-runs-count',
     'cucumber'
   );
+  renderBrowserStackPanel();
+}
+
+async function loadBrowserStack() {
+  try {
+    const res = await fetch('/api/browserstack/status');
+    state.browserstack = await res.json();
+  } catch {
+    state.browserstack = { configured: false, defaults: [] };
+  }
+  syncBrowserStackOptions();
+  renderBrowserStackPanel();
+}
+
+function syncBrowserStackOptions() {
+  const select = $('#scan-provider');
+  const hint = $('#scan-provider-hint');
+  const status = state.browserstack || { configured: false };
+  if (!select) return;
+  const option = select.querySelector('option[value="browserstack"]');
+  if (option) {
+    option.disabled = !status.configured;
+    option.textContent = status.configured
+      ? t('scans.create.provider.browserstack')
+      : `${t('scans.create.provider.browserstack')} — ${t('runs.browserstack.notConfigured')}`;
+  }
+  if (!status.configured && select.value === 'browserstack') select.value = 'local';
+  if (hint) {
+    hint.textContent = status.configured
+      ? t('scans.create.provider.hint')
+      : t('scans.create.provider.missing');
+  }
+}
+
+function renderBrowserStackPanel() {
+  const status = state.browserstack || { configured: false, defaults: [] };
+  const badge = $('#browserstack-status-badge');
+  const text = $('#browserstack-status-text');
+  const defaults = $('#browserstack-defaults');
+  const list = $('#runs-list-browserstack');
+  const empty = $('#runs-empty-browserstack');
+  const count = $('#browserstack-runs-count');
+  if (!list || !empty || !count) return;
+
+  if (badge) {
+    badge.textContent = status.configured
+      ? t('runs.browserstack.configured')
+      : t('runs.browserstack.notConfigured');
+    badge.className = 'badge ' + (status.configured ? 'ok' : 'warn');
+  }
+  if (text) {
+    text.textContent = status.configured
+      ? 'Chrome, Firefox y WebKit/Safari en la nube. Solo se usan las credenciales de src/.env.'
+      : 'Agrega BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env para habilitar la nube.';
+  }
+  if (defaults) {
+    const items = Array.isArray(status.defaults) ? status.defaults : [];
+    defaults.innerHTML = items.map((item) => `<span class="badge">${esc(item.label)}</span>`).join('');
+  }
+
+  const runs = (state.runs || [])
+    .filter((run) => run.provider === 'browserstack' || run.browserstack)
+    .sort((a, b) => runTimestamp(b) - runTimestamp(a));
+  count.textContent = num(runs.length);
+  if (runs.length === 0) {
+    list.innerHTML = '';
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  list.innerHTML = runs.map((run) => {
+    const meta = run.browserstack || {};
+    const report = run.reportPath
+      ? `<a class="btn" href="/${esc(run.reportPath)}" target="_blank" rel="noopener">${esc(t('runs.browserstack.report'))}</a>`
+      : '';
+    const external = meta.dashboardUrl
+      ? `<a class="btn ghost" href="${esc(meta.dashboardUrl)}" target="_blank" rel="noopener">${esc(t('runs.browserstack.open'))}</a>`
+      : '';
+    const local = meta.local ? ` <span class="badge">${esc(t('runs.browserstack.local'))}</span>` : '';
+    const browsers = Array.isArray(meta.browsers) && meta.browsers.length
+      ? meta.browsers.map((browser) => `<span class="badge">${esc(browser)}</span>`).join(' ')
+      : '';
+    return `
+      <article class="browserstack-run">
+        <div class="browserstack-run-main">
+          <div class="browserstack-run-title">
+            <strong>${esc(fmtDateShort(runTimestamp(run)))}</strong>
+            <span class="badge info">${esc(t('runs.browserstack.cloud'))}</span>${local}
+          </div>
+          <p class="scan-url">${esc(run.url || '—')}</p>
+          <p class="muted">${esc(runCounts(run))}${meta.build ? ` · build: ${esc(meta.build)}` : ''}</p>
+          <div class="browserstack-run-browsers">${browsers}</div>
+        </div>
+        <div class="browserstack-run-actions">
+          ${report}
+          ${external}
+          <button type="button" class="btn danger" data-browserstack-delete="${esc(run.reportPath)}"
+            title="${esc(t('runs.browserstack.delete'))}" aria-label="${esc(t('runs.browserstack.delete'))}">✕</button>
+        </div>
+      </article>`;
+  }).join('');
 }
 
 function resolveCurrentPath(runs, execution) {
@@ -2760,7 +2894,7 @@ function bind() {
   $$('[data-about-tab]').forEach((button) => button.addEventListener('click', () => setAboutTab(button.dataset.aboutTab)));
 
   $('#refresh').addEventListener('click', async () => {
-    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCi()]);
+    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCi(), loadBrowserStack()]);
     toast(t('toast.refreshed'));
   });
 
@@ -2814,6 +2948,14 @@ function bind() {
       if (item) selectRun(kind, item.dataset.runSelect);
     });
   });
+
+  const browserstackList = $('#runs-list-browserstack');
+  if (browserstackList) {
+    browserstackList.addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-browserstack-delete]');
+      if (remove) deleteRun('playwright', remove.dataset.browserstackDelete);
+    });
+  }
 
   $('#home-detail-btn').addEventListener('click', openOverviewDetail);
 
@@ -2893,7 +3035,7 @@ function init() {
   applyLang();
   setScanFilter(state.scanFilter);
   setRunFilter(state.runFilter);
-  Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCi(), loadScanJob()]);
+  Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCi(), loadScanJob(), loadBrowserStack()]);
 }
 
 init();

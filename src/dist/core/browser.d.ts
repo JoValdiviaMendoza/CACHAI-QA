@@ -37,10 +37,6 @@ export declare class BrowserManager {
      */
     private initializeBrowserStack;
     /**
-     * Construye capabilities para BrowserStack
-     */
-    private buildBrowserStackCapabilities;
-    /**
      * Obtiene el tipo de navegador Playwright
      */
     private getLocalBrowserType;

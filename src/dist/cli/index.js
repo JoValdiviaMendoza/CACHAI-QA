@@ -50,6 +50,7 @@ const yargs_1 = __importDefault(require("yargs"));
 const helpers_1 = require("yargs/helpers");
 const config_1 = require("../config");
 const browser_1 = require("../core/browser");
+const browserstack_1 = require("../core/browserstack");
 const scanner_1 = require("../core/scanner");
 const generator_1 = require("../core/generator");
 async function main() {
@@ -511,21 +512,38 @@ async function runOnBrowserStack(context) {
     const reportDirNormalized = path.resolve(reportDir).replace(/\\/g, '/');
     const reportFolderName = `playwright-report-${timestampSlug()}`;
     context.reportFolder = path.join(reportDir, reportFolderName);
-    const bsConfig = 'import { defineConfig, devices } from \'@playwright/test\';\n' +
+    const bsTargets = config.browserstack.browsers.map((browser) => (0, browserstack_1.resolveBrowserStackTargetFromConfig)(browser));
+    const bsProjects = bsTargets.map((target) => {
+        const version = target.browser_version ? `'${target.browser_version}'` : 'undefined';
+        return `{ name: 'bs-${target.id}', use: { browserName: 'chromium', connectOptions: { wsEndpoint: browserStackEndpoint('${target.browser}', '${target.os}', '${target.os_version}', ${version}, '${target.label}') } } }`;
+    }).join(', ');
+    const bsConfig = 'import { defineConfig } from \'@playwright/test\';\n' +
+        'const BROWSERSTACK_LOCAL = process.env.CACHAI_BROWSERSTACK_LOCAL === "1";\n' +
+        'function browserStackEndpoint(browser: string, os: string, osVersion: string, browserVersion: string | undefined, label: string): string {\n' +
+        '  const username = process.env.BROWSERSTACK_USERNAME;\n' +
+        '  const accessKey = process.env.BROWSERSTACK_ACCESS_KEY;\n' +
+        '  if (!username || !accessKey) throw new Error("BrowserStack requiere BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY.");\n' +
+        '  const caps: Record<string, string | boolean> = {\n' +
+        '    browser, os, os_version: osVersion,\n' +
+        '    "browserstack.username": username, "browserstack.accessKey": accessKey,\n' +
+        '    project: "CACHAI-QA", build: process.env.CACHAI_BROWSERSTACK_BUILD || "CACHAI-QA", name: "CACHAI-QA · " + label,\n' +
+        '    "browserstack.debug": true, "browserstack.console": "errors", "browserstack.networkLogs": true,\n' +
+        '    "browserstack.video": true, "browserstack.playwrightVersion": "1.latest", "client.playwrightVersion": "1.latest",\n' +
+        '    "browserstack.local": BROWSERSTACK_LOCAL ? "true" : "false"\n' +
+        '  };\n' +
+        '  if (browserVersion) caps.browser_version = browserVersion;\n' +
+        '  if (BROWSERSTACK_LOCAL) caps["browserstack.localIdentifier"] = process.env.CACHAI_BROWSERSTACK_LOCAL_IDENTIFIER || "cachai-qa";\n' +
+        '  return `wss://cdp.browserstack.com/playwright?caps=${encodeURIComponent(JSON.stringify(caps))}`;\n' +
+        '}\n' +
         'export default defineConfig({\n' +
         '  testDir: \'.\',\n' +
         '  testMatch: \'cachai-tests.spec.ts\',\n' +
         '  timeout: ' + (config.browserstack.sessionTimeout * 1000) + ',\n' +
         '  retries: ' + config.crawl.retryCount + ',\n' +
-        '  fullyParallel: true,\n' +
-        '  use: { trace: \'on-first-retry\' },\n' +
-        '  projects: ' + JSON.stringify(config.browserstack.browsers.map((b, i) => ({
-        name: 'bs-' + b.browser + '-' + b.os,
-        use: {
-            browserName: b.browser === 'chrome' ? 'chromium' : b.browser === 'firefox' ? 'firefox' : 'webkit',
-            viewport: { width: config.crawl.viewport.width, height: config.crawl.viewport.height },
-        },
-    }))) + ',\n' +
+        '  fullyParallel: false,\n' +
+        '  workers: 1,\n' +
+        '  use: { screenshot: \'only-on-failure\', viewport: { width: ' + config.crawl.viewport.width + ', height: ' + config.crawl.viewport.height + ' } },\n' +
+        '  projects: [' + bsProjects + '],\n' +
         '  reporter: [[\'html\', { outputFolder: \'' + reportDirNormalized + '/' + reportFolderName + '\', open: \'never\' }], [\'json\', { outputFile: \'' + reportDirNormalized + '/results.json\' }]]\n' +
         '});\n';
     const configFile = path.join(testDir, 'playwright.config.ts');
@@ -535,8 +553,8 @@ async function runOnBrowserStack(context) {
         ...process.env,
         BROWSERSTACK_USERNAME: config.browserstack.username,
         BROWSERSTACK_ACCESS_KEY: config.browserstack.accessKey,
-        BROWSERSTACK_PROJECT_NAME: config.browserstack.projectName,
-        BROWSERSTACK_BUILD_NAME: config.browserstack.buildName,
+        CACHAI_BROWSERSTACK_BUILD: config.browserstack.buildName,
+        CACHAI_BROWSERSTACK_LOCAL: '0',
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     };
     try {

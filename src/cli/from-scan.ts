@@ -15,8 +15,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import * as dotenv from 'dotenv';
 import { spawn, spawnSync, exec } from 'child_process';
 import { CUCUMBER_STEPS_TEMPLATE } from './cucumber-steps-template';
+import {
+  browserStackBuildName,
+  browserStackDashboardUrl,
+  hasBrowserStackCredentials,
+  isLocalTargetUrl,
+  resolveBrowserStackTarget,
+  startBrowserStackLocal
+} from '../core/browserstack';
+
+// Cargar .env para que BrowserStack funcione también desde el .bat y el panel.
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 // ============================================
 // Constantes
@@ -29,6 +41,8 @@ const SPEC_NAME = 'cachai-tests.spec.ts';
 const FEATURE_NAME = 'cachai-tests.feature';
 const CONFIG_NAME = 'playwright.config.ts';
 const STEPS_NAME = 'cachai-steps.ts';
+const BROWSERSTACK_FIXTURE_NAME = 'cachai-browserstack.ts';
+const BROWSERSTACK_META_NAME = 'browserstack.json';
 
 const DEFAULT_MAX_LINKS_PER_PAGE = 40;
 const MAX_IMAGES_PER_PAGE = 80;
@@ -614,14 +628,23 @@ function buildPageScenarios(
 // Render de archivos
 // ============================================
 
-function buildSpecFile(pageSpecs: PageScenarios[], meta: { scanPath: string; generatedAt: string; totalTests: number }): string {
+function buildSpecFile(
+  pageSpecs: PageScenarios[],
+  meta: { scanPath: string; generatedAt: string; totalTests: number; browserstack?: boolean }
+): string {
   const lines: string[] = [];
   lines.push('// Auto-generado por CACHAI-QA — no editar a mano.');
   lines.push(`// Escaneo: ${meta.scanPath}`);
   lines.push(`// Generado: ${meta.generatedAt}`);
   lines.push(`// Páginas: ${pageSpecs.length} · Escenarios: ${meta.totalTests}`);
+  lines.push(`// Ejecución: ${meta.browserstack ? 'BrowserStack' : 'local'}`);
   lines.push('');
-  lines.push("import { test, expect, type APIRequestContext } from '@playwright/test';");
+  if (meta.browserstack) {
+    lines.push("import { test, expect } from './cachai-browserstack';");
+    lines.push("import type { APIRequestContext } from '@playwright/test';");
+  } else {
+    lines.push("import { test, expect, type APIRequestContext } from '@playwright/test';");
+  }
   lines.push('');
   lines.push('// --- Comprobación de enlaces (compartida por los escenarios generados) ---');
   lines.push('');
@@ -751,8 +774,8 @@ interface BrowserConfig {
 }
 
 /** Normaliza los navegadores pedidos y genera proyectos válidos de Playwright. */
-function parseBrowsers(value: string): BrowserConfig[] {
-  const aliases: Record<string, BrowserConfig> = {
+function parseBrowsers(value: string, browserstack = false): BrowserConfig[] {
+  const localAliases: Record<string, BrowserConfig> = {
     chromium: { name: 'chromium', use: "{ browserName: 'chromium' }" },
     chrome: { name: 'chrome', use: "{ browserName: 'chromium', channel: 'chrome' }" },
     'google-chrome': { name: 'chrome', use: "{ browserName: 'chromium', channel: 'chrome' }" },
@@ -768,12 +791,39 @@ function parseBrowsers(value: string): BrowserConfig[] {
   for (const raw of String(value || '').split(',')) {
     const key = raw.trim().toLowerCase();
     if (!key) continue;
-    const browser = aliases[key];
+
+    if (browserstack) {
+      const target = resolveBrowserStackTarget(key);
+      if (seen.has(target.id)) continue;
+      seen.add(target.id);
+      const version = target.browser_version ? esc(target.browser_version) : 'undefined';
+      result.push({
+        name: target.id,
+        use:
+          `{ browserName: 'chromium', connectOptions: { wsEndpoint: ` +
+          `browserStackEndpoint(${esc(target.browser)}, ${esc(target.os)}, ${esc(target.os_version)}, ${version}, ${esc(target.label)}) } }`
+      });
+      continue;
+    }
+
+    const browser = localAliases[key];
     if (!browser || seen.has(browser.name)) continue;
     seen.add(browser.name);
     result.push(browser);
   }
-  return result.length > 0 ? result : [aliases.chromium];
+
+  if (result.length > 0) return result;
+  if (browserstack) {
+    const target = resolveBrowserStackTarget('chromium');
+    const version = target.browser_version ? esc(target.browser_version) : 'undefined';
+    return [{
+      name: target.id,
+      use:
+        `{ browserName: 'chromium', connectOptions: { wsEndpoint: ` +
+        `browserStackEndpoint(${esc(target.browser)}, ${esc(target.os)}, ${esc(target.os_version)}, ${version}, ${esc(target.label)}) } }`
+    }];
+  }
+  return [localAliases.chromium];
 }
 
 function buildConfigFile(
@@ -781,34 +831,151 @@ function buildConfigFile(
   resultsFile: string,
   timeout: number,
   browsers: BrowserConfig[],
-  workers: number
+  workers: number,
+  browserstack = false,
+  buildName = ''
 ): string {
   const projects = browsers
     .map((browser) => `{ name: ${esc(browser.name)}, use: ${browser.use} }`)
     .join(', ');
-  const safeWorkers = Math.max(1, Math.min(32, Math.floor(Number(workers) || 1)));
+  const safeWorkers = browserstack
+    ? 1
+    : Math.max(1, Math.min(32, Math.floor(Number(workers) || 1)));
+  const safeTimeout = browserstack ? Math.max(180000, Number(timeout) || 0) : timeout;
 
-  return [
+  const lines = [
     "import { defineConfig } from '@playwright/test';",
+    '',
+    '// BrowserStack: las credenciales se leen del entorno; no se escriben aquí.',
+    'const BROWSERSTACK_LOCAL = process.env.CACHAI_BROWSERSTACK_LOCAL === "1";',
+    `const BROWSERSTACK_BUILD = process.env.CACHAI_BROWSERSTACK_BUILD || ${esc(buildName || 'CACHAI-QA')};`,
+    'function browserStackEndpoint(browser: string, os: string, osVersion: string, browserVersion: string | undefined, label: string): string {',
+    '  const username = process.env.BROWSERSTACK_USERNAME;',
+    '  const accessKey = process.env.BROWSERSTACK_ACCESS_KEY;',
+    '  if (!username || !accessKey) {',
+    '    throw new Error("BrowserStack requiere BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env.");',
+    '  }',
+    '  const caps: Record<string, string | boolean> = {',
+    '    browser,',
+    '    os,',
+    '    os_version: osVersion,',
+    '    "browserstack.username": username,',
+    '    "browserstack.accessKey": accessKey,',
+    '    project: "CACHAI-QA",',
+    '    build: BROWSERSTACK_BUILD,',
+    `    name: "CACHAI-QA · " + label,`,
+    '    "browserstack.debug": true,',
+    '    "browserstack.console": "errors",',
+    '    "browserstack.networkLogs": true,',
+    '    "browserstack.video": true,',
+    '    "browserstack.playwrightVersion": "1.latest",',
+    '    "client.playwrightVersion": "1.latest",',
+    '    "browserstack.local": BROWSERSTACK_LOCAL ? "true" : "false"',
+    '  };',
+    '  if (browserVersion) caps.browser_version = browserVersion;',
+    '  if (BROWSERSTACK_LOCAL) {',
+    '    caps["browserstack.localIdentifier"] = process.env.CACHAI_BROWSERSTACK_LOCAL_IDENTIFIER || "cachai-qa";',
+    '  }',
+    '  return `wss://cdp.browserstack.com/playwright?caps=${encodeURIComponent(JSON.stringify(caps))}`;',
+    '}',
     '',
     'export default defineConfig({',
     "  testDir: '.',",
     `  testMatch: ${esc(SPEC_NAME)},`,
-    `  timeout: ${timeout},`,
+    `  timeout: ${safeTimeout},`,
     '  retries: 0,',
-    '  fullyParallel: true,',
+    `  fullyParallel: ${browserstack ? 'false' : 'true'},`,
     `  workers: ${safeWorkers},`,
     '  use: {',
-    '    headless: true,',
-    '    viewport: { width: 1366, height: 768 },',
-    '    navigationTimeout: 45000,',
-    "    trace: 'on-first-retry',",
-    "    screenshot: 'only-on-failure',",
-    "    video: 'retain-on-failure'",
+    ...(browserstack
+      ? [
+          '    viewport: { width: 1366, height: 768 },',
+          '    navigationTimeout: 45000,',
+          '    screenshot: \'only-on-failure\''
+        ]
+      : [
+          '    headless: true,',
+          '    viewport: { width: 1366, height: 768 },',
+          '    navigationTimeout: 45000,',
+          "    trace: 'on-first-retry',",
+          "    screenshot: 'only-on-failure',",
+          "    video: 'retain-on-failure'"
+        ]),
     '  },',
     `  projects: [${projects}],`,
     `  reporter: [['html', { outputFolder: ${esc(reportFolder)}, open: 'never' }], ['json', { outputFile: ${esc(resultsFile)} }]]`,
     '});',
+    ''
+  ];
+
+  return lines.join('\n');
+}
+
+/** Escribe los metadatos que usa el dashboard para la pestaña BrowserStack. */
+function writeBrowserStackMetadata(
+  reportFolder: string,
+  meta: { buildName: string; targetUrl: string; local: boolean; browsers: string[]; generatedAt: string }
+): void {
+  const payload = JSON.stringify(
+    {
+      provider: 'browserstack',
+      project: 'CACHAI-QA',
+      build: meta.buildName,
+      dashboardUrl: browserStackDashboardUrl(meta.buildName),
+      targetUrl: meta.targetUrl,
+      local: meta.local,
+      browsers: meta.browsers,
+      createdAt: meta.generatedAt
+    },
+    null,
+    2
+  );
+
+  fs.mkdirSync(reportFolder, { recursive: true });
+  fs.writeFileSync(path.join(reportFolder, BROWSERSTACK_META_NAME), payload, 'utf8');
+
+  // Copia fuera de la carpeta del reporte: el reporter HTML puede limpiarla
+  // al ejecutar Playwright manualmente.
+  const slug = path.basename(reportFolder).replace(/^playwright-report-/, '');
+  fs.writeFileSync(
+    path.join(path.dirname(reportFolder), `browserstack-${slug}.json`),
+    payload,
+    'utf8'
+  );
+}
+
+/**
+ * Fixture mínimo para marcar el estado real de cada sesión en BrowserStack.
+ * Solo se genera cuando se ejecuta en la nube; el flujo local no lo usa.
+ */
+function buildBrowserStackFixture(): string {
+  return [
+    '// Auto-generado por CACHAI-QA para BrowserStack.',
+    "import { test as base, expect } from '@playwright/test';",
+    '',
+    'export const test = base.extend({',
+    '  page: async ({ page }, use, testInfo) => {',
+    '    try {',
+    '      await use(page);',
+    '    } finally {',
+    "      if (testInfo.status !== 'skipped') {",
+    "        const status = testInfo.status === 'passed' ? 'passed' : 'failed';",
+    "        const errorMessage = testInfo.error && testInfo.error.message ? String(testInfo.error.message) : testInfo.status;",
+    '        const payload = JSON.stringify({',
+    "          action: 'setSessionStatus',",
+    "          arguments: { status, reason: errorMessage.slice(0, 500) }",
+    '        });',
+    '        try {',
+    '          await page.evaluate((_payload: unknown) => {}, `browserstack_executor: ${payload}`);',
+    '        } catch {',
+    '          // La página pudo cerrarse por un fallo; la sesión ya quedó registrada.',
+    '        }',
+    '      }',
+    '    }',
+    '  }',
+    '});',
+    '',
+    'export { expect };',
     ''
   ].join('\n');
 }
@@ -874,16 +1041,38 @@ function buildSummary(
 // Ejecucion de Playwright
 // ============================================
 
-function runPlaywright(outDir: string): number {
+function runPlaywright(
+  outDir: string,
+  options: { browserstack?: boolean; buildName?: string; local?: boolean; localIdentifier?: string } = {}
+): number {
   console.log('');
-  console.log('Ejecutando las pruebas con Playwright...');
+  console.log(
+    options.browserstack
+      ? 'Ejecutando las pruebas en BrowserStack...'
+      : 'Ejecutando las pruebas con Playwright...'
+  );
   console.log('');
+
+  const env = {
+    ...process.env,
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+    ...(options.browserstack
+      ? {
+          CACHAI_BROWSERSTACK: '1',
+          CACHAI_BROWSERSTACK_BUILD: options.buildName || browserStackBuildName(),
+          CACHAI_BROWSERSTACK_LOCAL: options.local ? '1' : '0',
+          ...(options.localIdentifier
+            ? { CACHAI_BROWSERSTACK_LOCAL_IDENTIFIER: options.localIdentifier }
+            : {})
+        }
+      : {})
+  };
 
   const result = spawnSync('npx', ['playwright', 'test', '--config', CONFIG_NAME], {
     cwd: outDir,
     shell: true,
     stdio: 'inherit',
-    env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' }
+    env
   });
 
   if (result.error) {
@@ -928,7 +1117,8 @@ async function main(): Promise<void> {
     .option('scan', { alias: 's', type: 'string', describe: 'Archivo JSON de escaneo (por defecto: el más reciente)' })
     .option('run', { alias: 'r', type: 'boolean', default: false, describe: 'Ejecutar las pruebas después de generarlas' })
     .option('output', { alias: 'o', type: 'string', describe: 'Carpeta de salida de las pruebas' })
-    .option('browsers', { type: 'string', default: 'chromium,firefox,chrome', describe: 'Navegadores separados por coma (chromium,firefox,chrome)' })
+    .option('browserstack', { alias: 'bs', type: 'boolean', default: false, describe: 'Ejecutar Playwright en BrowserStack (solo requiere credenciales en .env)' })
+    .option('browsers', { type: 'string', describe: 'Navegadores separados por coma. Local: chromium,firefox,chrome. BrowserStack: chromium,firefox,webkit' })
     .option('timeout', { type: 'number', default: 60000, describe: 'Timeout por prueba (ms)' })
     .option('workers', { type: 'number', default: 5, describe: 'Cantidad de pruebas Playwright en paralelo' })
     .option('max-links', { type: 'number', default: DEFAULT_MAX_LINKS_PER_PAGE, describe: 'Máximo de enlaces nuevos a comprobar por página' })
@@ -957,9 +1147,26 @@ async function main(): Promise<void> {
     .filter(Boolean);
   const customSelector = tipos.includes('custom') ? scan.scanMeta?.selector : undefined;
 
-  const browsers = parseBrowsers(String(argv.browsers || 'chromium,firefox,chrome'));
+  const useBrowserStack = Boolean(argv.browserstack);
+  if (useBrowserStack && !hasBrowserStackCredentials()) {
+    throw new Error(
+      'BrowserStack requiere BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env. ' +
+      'No necesitas configurar nada más.'
+    );
+  }
+
+  const buildName = useBrowserStack
+    ? (String(process.env.CACHAI_BROWSERSTACK_BUILD || '').trim() || browserStackBuildName())
+    : '';
+  if (useBrowserStack) process.env.CACHAI_BROWSERSTACK_BUILD = buildName;
+
+  const rawBrowsers = String(
+    argv.browsers || (useBrowserStack ? 'chromium,firefox,webkit' : 'chromium,firefox,chrome')
+  );
+  const browsers = parseBrowsers(rawBrowsers, useBrowserStack);
   const workers = Math.max(1, Math.min(32, Math.floor(Number(argv.workers) || 5)));
   const maxLinks = Math.max(1, Math.min(500, Math.floor(Number(argv.maxLinks) || DEFAULT_MAX_LINKS_PER_PAGE)));
+  const localTarget = useBrowserStack && isLocalTargetUrl(scan.baseUrl);
 
   const seenLinks = new Set<string>();
   const pageSpecs = pages
@@ -986,17 +1193,43 @@ async function main(): Promise<void> {
   fs.mkdirSync(outDir, { recursive: true });
 
   const scanRel = toPosix(path.relative(root, scanPath));
-  const specContent = buildSpecFile(pageSpecs, { scanPath: scanRel, generatedAt, totalTests });
+  const specContent = buildSpecFile(pageSpecs, {
+    scanPath: scanRel,
+    generatedAt,
+    totalTests,
+    browserstack: useBrowserStack
+  });
   fs.writeFileSync(specPath, specContent, 'utf8');
   fs.writeFileSync(featurePath, buildFeatureFile(scan, pageSpecs), 'utf8');
   // Los pasos BDD se regeneran junto con el .feature para que siempre coincidan
   // con el Gherkin en lenguaje natural generado.
   fs.writeFileSync(stepsPath, CUCUMBER_STEPS_TEMPLATE, 'utf8');
+  if (useBrowserStack) {
+    fs.writeFileSync(path.join(outDir, BROWSERSTACK_FIXTURE_NAME), buildBrowserStackFixture(), 'utf8');
+  }
   fs.writeFileSync(
     configPath,
-    buildConfigFile(toPosix(reportFolder), toPosix(resultsFile), Number(argv.timeout) || 60000, browsers, workers),
+    buildConfigFile(
+      toPosix(reportFolder),
+      toPosix(resultsFile),
+      Number(argv.timeout) || 60000,
+      browsers,
+      workers,
+      useBrowserStack,
+      buildName
+    ),
     'utf8'
   );
+
+  if (useBrowserStack) {
+    writeBrowserStackMetadata(reportFolder, {
+      buildName,
+      targetUrl: scan.baseUrl,
+      local: localTarget,
+      browsers: browsers.map((browser) => browser.name),
+      generatedAt
+    });
+  }
 
   let host = 'sitio';
   try {
@@ -1030,8 +1263,15 @@ async function main(): Promise<void> {
   console.log(`Sitio:        ${scan.baseUrl}`);
   console.log(`Páginas:      ${pageSpecs.length}`);
   console.log(`Escenarios:   ${totalTests} (lenguaje natural / BDD)`);
+  console.log(`Entorno:      ${useBrowserStack ? 'BrowserStack (nube)' : 'Local'}`);
   console.log(`Navegadores:  ${browsers.map((browser) => browser.name).join(', ')}`);
-  console.log(`Workers:      ${workers}`);
+  console.log(`Workers:      ${useBrowserStack ? 1 : workers}`);
+  if (useBrowserStack) {
+    console.log(`Build:        ${buildName}`);
+    if (localTarget) {
+      console.log('Túnel local:  BrowserStack Local automático (para localhost/red privada)');
+    }
+  }
   console.log(`Enlaces/pág:  ${maxLinks} (los enlaces se comprueban una sola vez, en ${browsers[0].name})`);
   console.log(`Spec:         ${toPosix(path.relative(root, specPath))}`);
   console.log(`Gherkin:      ${toPosix(path.relative(root, featurePath))}`);
@@ -1060,13 +1300,47 @@ async function main(): Promise<void> {
   let exitCode = 0;
 
   if (shouldRun) {
-    exitCode = runPlaywright(outDir);
+    let tunnel: { identifier: string; stop: () => Promise<void> } | undefined;
+    try {
+      if (useBrowserStack && localTarget) {
+        console.log('');
+        console.log('Iniciando BrowserStack Local para acceder al sitio local...');
+        tunnel = await startBrowserStackLocal(buildName);
+        process.env.CACHAI_BROWSERSTACK_LOCAL_IDENTIFIER = tunnel.identifier;
+      }
+      exitCode = runPlaywright(outDir, {
+        browserstack: useBrowserStack,
+        buildName,
+        local: localTarget,
+        localIdentifier: tunnel ? tunnel.identifier : undefined
+      });
+    } finally {
+      if (tunnel) {
+        await tunnel.stop();
+        delete process.env.CACHAI_BROWSERSTACK_LOCAL_IDENTIFIER;
+      }
+    }
+
+    // El reporter HTML puede limpiar su carpeta; se reescribe después de correr.
+    if (useBrowserStack) {
+      writeBrowserStackMetadata(reportFolder, {
+        buildName,
+        targetUrl: scan.baseUrl,
+        local: localTarget,
+        browsers: browsers.map((browser) => browser.name),
+        generatedAt
+      });
+    }
+
     console.log('');
     const reportIndex = `${toPosix(path.relative(root, reportFolder))}/index.html`;
     if (exitCode === 0) {
       console.log(`Pruebas completadas sin fallos. Reporte HTML: ${reportIndex}`);
     } else {
       console.log(`Algunas pruebas fallaron (código ${exitCode}). Reporte HTML: ${reportIndex}`);
+    }
+    if (useBrowserStack) {
+      console.log(`Sesiones BrowserStack: ${browserStackDashboardUrl(buildName)}`);
     }
   } else {
     console.log('Pruebas generadas sin ejecutar. Podrás ejecutarlas desde el panel web.');

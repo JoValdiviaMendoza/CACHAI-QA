@@ -123,15 +123,20 @@ jobs:
           "
 
       - name: Ejecutar crawler
-        run: >
-          npx ts-node --transpile-only crawler.ts
-          --url="${{ inputs.target_url || 'https://scrapethissite.com/' }}"
-          --type=${{ inputs.scan_type || 'all' }}
-          --depth=${{ inputs.depth || '999' }}
-          --max-pages=${{ inputs.max_pages || '999999' }}
-          --concurrency=3
-          --headless
-          --output=scan-report/ci-scan.json
+        env:
+          TARGET_URL: ${{ inputs.target_url || 'https://scrapethissite.com/' }}
+          SCAN_TYPE: ${{ inputs.scan_type || 'all' }}
+          CRAWL_DEPTH: ${{ inputs.depth || '999' }}
+          MAX_PAGES: ${{ inputs.max_pages || '999999' }}
+        run: |
+          npx ts-node --transpile-only crawler.ts \
+            --url="$TARGET_URL" \
+            --type="$SCAN_TYPE" \
+            --depth="$CRAWL_DEPTH" \
+            --max-pages="$MAX_PAGES" \
+            --concurrency=3 \
+            --headless \
+            --output=scan-report/ci-scan.json
 
       - name: Validar scan generado
         run: |
@@ -187,15 +192,18 @@ jobs:
           path: src/scan-report
 
       - name: Generar pruebas desde el scan
-        run: >
-          npx ts-node --transpile-only cli/from-scan.ts
-          --scan=scan-report/ci-scan.json
-          --browsers=${{ inputs.browsers || 'chromium' }}
-          --workers=2
-          --max-links=${{ inputs.max_links || '5' }}
-          --timeout=60000
-          --no-prompt
-          --no-open
+        env:
+          BROWSERS: ${{ inputs.browsers || 'chromium' }}
+          MAX_LINKS: ${{ inputs.max_links || '5' }}
+        run: |
+          npx ts-node --transpile-only cli/from-scan.ts \
+            --scan=scan-report/ci-scan.json \
+            --browsers="$BROWSERS" \
+            --workers=2 \
+            --max-links="$MAX_LINKS" \
+            --timeout=60000 \
+            --no-prompt \
+            --no-open
 
       - name: Ejecutar Playwright
         id: playwright
@@ -214,11 +222,11 @@ jobs:
         run: npx cucumber-js --config cucumber.js
 
       - name: Generar reporte de defectos
-        if: always()
-        continue-on-error: true
-        run: >
-          node cli/report-defects.js "${{ inputs.engine || 'both' }}"
-          --scan=scan-report/ci-scan.json
+        env:
+          ENGINE: ${{ inputs.engine || 'both' }}
+        run: |
+          node cli/report-defects.js "$ENGINE" \
+            --scan=scan-report/ci-scan.json
 
       - name: Publicar reportes
         if: always()

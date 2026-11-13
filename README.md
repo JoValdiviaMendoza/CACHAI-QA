@@ -30,7 +30,7 @@ CACHAI-QA se encuentra en un **MVP funcional local** y cuenta con un workflow de
 | Dashboard local | ✅ Operativo |
 | Auditoría local desde el dashboard | ✅ Operativo |
 | GitHub Actions | ✅ Validado con ejecución en GitHub |
-| BrowserStack / Safari | 🟡 Estructura preparada, sin ejecución validada |
+| BrowserStack / Safari | ✅ Implementado; requiere credenciales reales para la ejecución end-to-end |
 | Informe final consolidado | 🟡 Pendiente |
 
 El repositorio se organiza en `Fase 1/`, `Fase 2/`, `src/` y este `README.md`. La configuración de CI vive en `.github/workflows/qa.yml`.
@@ -52,12 +52,12 @@ El repositorio se organiza en `Fase 1/`, `Fase 2/`, `src/` y este `README.md`. L
 ### Cloud / Infraestructura
 
 - **GitHub Actions** — Workflow manual de escaneo, generación, ejecución y publicación de artefactos.
-- **BrowserStack** — Integración prevista para ejecución cloud y Safari. **Estado:** estructura/configuración preparada; ejecución end-to-end pendiente de credenciales y validación.
+- **BrowserStack** — Ejecución cloud de Playwright en Chrome, Firefox y WebKit/Safari. **Estado:** implementado; solo requiere usuario y access key.
 
 ### Navegadores objetivo de prueba
 
 - **Chromium**, **Google Chrome** y **Mozilla Firefox** — ejecución local configurada.
-- **Apple Safari** — validación pendiente mediante BrowserStack.
+- **Apple Safari** — ejecución remota mediante BrowserStack/WebKit.
 
 > Chrome utiliza el navegador instalado en el sistema. Si no está disponible, se puede ejecutar solo con Chromium y Firefox mediante `--browsers=chromium,firefox`.
 
@@ -157,13 +157,14 @@ GITHUB_CI_REF=main
 GITHUB_CI_AUTO_IMPORT=true
 ```
 
-Variables opcionales para BrowserStack:
+BrowserStack solo necesita estas dos variables (opcionales):
 
 ```env
 BROWSERSTACK_USERNAME=...
 BROWSERSTACK_ACCESS_KEY=...
-BROWSERSTACK_PROJECT_NAME=CACHAI-QA
 ```
+
+El proyecto, la build, los navegadores (Chrome, Firefox y WebKit/Safari) y el túnel para `localhost` se configuran automáticamente. BrowserStack aplica a Playwright; Cucumber se ejecuta local. Después de editar `.env`, reinicia el dashboard para que lea las credenciales.
 
 ### Ejecución
 
@@ -174,7 +175,7 @@ Abrir src/cachai-qa.bat
 → [8] instalar dependencias
 → [7] configurar URL en .env
 → [1], [2] o [3] para escanear
-→ [4] para generar/ejecutar pruebas
+→ [4] para generar/ejecutar pruebas (local o BrowserStack si hay credenciales)
 → [5] para abrir el dashboard
 ```
 
@@ -213,6 +214,12 @@ Generar y ejecutar Playwright:
 npx ts-node cli/from-scan.ts --scan=scan-report/archivo.json --run
 ```
 
+Ejecutar Playwright en BrowserStack (solo con credenciales en `.env`):
+
+```bash
+npx ts-node cli/from-scan.ts --scan=scan-report/archivo.json --run --browserstack
+```
+
 Ejecutar Cucumber:
 
 ```bash
@@ -231,9 +238,11 @@ En **Escaneos** existe un formulario para ingresar una URL y ejecutar:
 
 - crawler rápido, completo o personalizado;
 - generación de pruebas;
-- Playwright;
-- Cucumber;
+- Playwright local o en BrowserStack;
+- Cucumber local;
 - reportes.
+
+El selector **Entorno** se habilita automáticamente cuando existen las credenciales de BrowserStack.
 
 Incluye estado en vivo, log y botón **Cancelar**.
 
@@ -255,7 +264,7 @@ El dashboard incluye una pestaña **GitHub Actions** para:
 - importar la última corrida;
 - revisar los errores del reporte importado.
 
-> El workflow debe estar en `main` para que `workflow_dispatch` esté disponible. El dashboard requiere `GITHUB_TOKEN`.
+> El workflow debe estar en `main` para que `workflow_dispatch` esté disponible. El dashboard requiere `GITHUB_TOKEN`. No uses `localhost` como URL remota: GitHub Actions no puede acceder a tu PC; usa una URL pública o un túnel.
 
 ### Acceso a resultados
 
@@ -271,7 +280,8 @@ El dashboard local muestra:
 - **Inicio:** salud general y errores.
 - **Escaneos:** rápidos, completos, personalizados, automatizados y favoritos.
 - **Ejecuciones:** historial Playwright/Cucumber y detalle de errores.
-- **GitHub Actions:** ejecuciones remotas, importación y errores del último reporte.
+- **GitHub Actions:** ejecuciones remotas, configuración, importación, historial de reportes, eliminación y detalle de errores.
+- **Auditoría local:** barra de avance, estado por etapa, log y cancelación.
 
 Los scans locales se nombran como:
 
@@ -308,6 +318,6 @@ El equipo gestiona el desarrollo del proyecto utilizando el framework ágil **Sc
 2. **Motor de escaneo:** crawler basado en Playwright que extrae enlaces, imágenes, formularios y botones.
 3. **Generador de pruebas:** convierte el scan JSON en un spec de Playwright y escenarios Gherkin/Cucumber.
 4. **Ejecución local:** Playwright en Chromium/Chrome/Firefox y Cucumber en Chromium.
-5. **Integración cloud:** adaptador BrowserStack para ejecución remota y Safari. *Pendiente de validación.*
+5. **Integración cloud:** Playwright en BrowserStack (Chrome, Firefox y WebKit/Safari), con túnel automático para sitios locales.
 6. **Reportes y dashboard:** consolida resultados, errores y defectos en HTML, JSON, Markdown y panel local.
 7. **CI/CD:** workflow de GitHub Actions con jobs de escaneo, pruebas y publicación de artefactos.
