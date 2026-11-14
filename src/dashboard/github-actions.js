@@ -45,6 +45,7 @@ function createGithubActions(options) {
 
   function publicConfig() {
     const current = state();
+    const importedRuns = Array.isArray(current.importedRuns) ? current.importedRuns : [];
     return {
       configured: configured(),
       hasToken: Boolean(token),
@@ -54,8 +55,44 @@ function createGithubActions(options) {
       autoImport,
       lastImportedRunId: current.lastImportedRunId || null,
       lastImportedAt: current.lastImportedAt || null,
-      importedRuns: Array.isArray(current.importedRuns) ? current.importedRuns : []
+      importedRuns: importedRuns.map(decorateImported),
+      hiddenRuns: Array.isArray(current.hiddenRuns) ? current.hiddenRuns : []
     };
+  }
+
+  /** Añade host y URL al registro importado leyendo su scan. */
+  function decorateImported(entry) {
+    const info = { ...entry };
+    if (entry && entry.scan) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.resolve(root, entry.scan), 'utf8'));
+        if (data && data.baseUrl) {
+          info.url = data.baseUrl;
+          info.host = hostSlug(data.baseUrl);
+        }
+      } catch { /* scan ausente o ilegible */ }
+    }
+    if (!info.host) info.host = 'sin-url';
+    return info;
+  }
+
+  /** Oculta o restaura ejecuciones remotas sin borrar nada en GitHub. */
+  function setHidden(payload = {}) {
+    const current = state();
+    let hidden = Array.isArray(current.hiddenRuns) ? current.hiddenRuns.slice() : [];
+
+    if (payload.restoreAll) {
+      hidden = [];
+    } else if (payload.runId != null && payload.runId !== '') {
+      const id = String(payload.runId);
+      if (payload.hidden === false) hidden = hidden.filter((item) => String(item) !== id);
+      else if (!hidden.some((item) => String(item) === id)) hidden.push(id);
+    } else {
+      throw new Error('Indica el runId que se quiere ocultar.');
+    }
+
+    saveState({ ...current, hiddenRuns: hidden.slice(0, 300) });
+    return { ok: true, hiddenRuns: hidden };
   }
 
   function headers() {
@@ -81,18 +118,21 @@ function createGithubActions(options) {
     if (!configured()) throw new Error('Configura GITHUB_REPO y GITHUB_TOKEN en src/.env.');
     const url = `${API}/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=15`;
     const data = await apiJson(url);
-    return (data.workflow_runs || []).map((run) => ({
-      id: run.id,
-      name: run.name || 'CACHAI-QA QA Pipeline',
-      runNumber: run.run_number,
-      branch: run.head_branch || '',
-      event: run.event || '',
-      status: run.status || '',
-      conclusion: run.conclusion || '',
-      createdAt: run.created_at || '',
-      updatedAt: run.updated_at || '',
-      htmlUrl: run.html_url || ''
-    }));
+    const hidden = new Set((state().hiddenRuns || []).map(String));
+    return (data.workflow_runs || [])
+      .filter((run) => !hidden.has(String(run.id)))
+      .map((run) => ({
+        id: run.id,
+        name: run.name || 'CACHAI-QA QA Pipeline',
+        runNumber: run.run_number,
+        branch: run.head_branch || '',
+        event: run.event || '',
+        status: run.status || '',
+        conclusion: run.conclusion || '',
+        createdAt: run.created_at || '',
+        updatedAt: run.updated_at || '',
+        htmlUrl: run.html_url || ''
+      }));
   }
 
   async function listArtifacts(runId) {
@@ -332,6 +372,10 @@ function createGithubActions(options) {
       if (!scanFile) throw new Error('No se encontró ci-scan.json en los artefactos.');
 
       const importedAt = new Date().toISOString();
+      let remoteInfo = {};
+      try {
+        remoteInfo = await apiJson(`${API}/repos/${repo}/actions/runs/${selectedId}`);
+      } catch { /* datos remotos opcionales */ }
       const scanData = JSON.parse(fs.readFileSync(scanFile, 'utf8'));
       const scanRel = `scan-report/github-actions-${hostSlug(scanData.baseUrl)}-${selectedId}.json`;
       scanData.scanMeta = {
@@ -357,6 +401,9 @@ function createGithubActions(options) {
         runId: selectedId,
         importedAt,
         scan: scanRel,
+        htmlUrl: remoteInfo.html_url || '',
+        branch: remoteInfo.head_branch || '',
+        runNumber: remoteInfo.run_number || null,
         ...reportPaths
       };
       const next = {
@@ -390,6 +437,14 @@ function createGithubActions(options) {
     if (!entry) throw new Error('La ejecución importada no existe.');
 
     const removed = [];
+    const others = importedRuns.filter((item) => String(item.runId) !== String(runId));
+    const referenced = (rel) => {
+      if (!rel) return false;
+      const prefix = String(rel).replace(/\/+$/, '') + '/';
+      return others.some((other) => [other.reportPath, other.cucumberPath, other.defectPath, other.summaryPath, other.scan]
+        .filter(Boolean)
+        .some((item) => item === rel || item.startsWith(prefix)));
+    };
     const reportsRoot = path.resolve(root, 'reports') + path.sep;
     const removeFile = (rel) => {
       if (!rel) return;
@@ -403,25 +458,24 @@ function createGithubActions(options) {
       } catch { /* ignore */ }
     };
 
+    // Solo se eliminan archivos que ninguna otra importación esté usando.
     if (entry.reportPath) {
-      removeFile(path.dirname(entry.reportPath).replace(/\\/g, '/'));
+      const dir = path.dirname(entry.reportPath).replace(/\\/g, '/');
+      if (!referenced(dir)) removeFile(dir);
     }
-    removeFile(entry.scan);
-    removeFile(entry.defectPath);
-    removeFile(entry.summaryPath);
-
-    // El reporte Cucumber suele ser compartido entre importaciones; solo se
-    // elimina si ninguna otra ejecución importada lo referencia.
-    if (entry.cucumberPath) {
-      const shared = importedRuns.some((item) => String(item.runId) !== String(runId)
-        && item.cucumberPath === entry.cucumberPath);
-      if (!shared) removeFile(entry.cucumberPath);
-    }
+    if (!referenced(entry.scan)) removeFile(entry.scan);
+    if (!referenced(entry.defectPath)) removeFile(entry.defectPath);
+    if (!referenced(entry.summaryPath)) removeFile(entry.summaryPath);
+    if (entry.cucumberPath && !referenced(entry.cucumberPath)) removeFile(entry.cucumberPath);
 
     const next = {
       ...current,
       importedRuns: importedRuns.filter((item) => String(item.runId) !== String(runId))
     };
+    // La ejecución eliminada tampoco debe reimportarse automáticamente.
+    const hidden = Array.isArray(current.hiddenRuns) ? current.hiddenRuns.slice() : [];
+    if (!hidden.some((item) => String(item) === String(runId))) hidden.push(String(runId));
+    next.hiddenRuns = hidden.slice(0, 300);
     if (String(next.lastImportedRunId) === String(runId)) {
       const remaining = next.importedRuns[0];
       next.lastImportedRunId = remaining ? remaining.runId : null;
@@ -431,7 +485,7 @@ function createGithubActions(options) {
     return { ok: true, runId: Number(runId), removed };
   }
 
-  return { publicConfig, listRuns, dispatchRun, importRun, deleteImportedRun };
+  return { publicConfig, listRuns, dispatchRun, importRun, deleteImportedRun, setHidden };
 }
 
 module.exports = { createGithubActions };

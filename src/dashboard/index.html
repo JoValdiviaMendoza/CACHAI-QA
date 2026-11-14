@@ -352,28 +352,67 @@
 
       <!-- BrowserStack -->
       <div id="run-panel-browserstack" class="run-subpanel">
-        <div class="card browserstack-summary">
-          <div class="browserstack-head">
-            <div class="logo-big" aria-hidden="true">☁️</div>
-            <div>
-              <h3 data-i18n="runs.browserstack.title">BrowserStack</h3>
-              <p id="browserstack-status-text" class="muted"></p>
-            </div>
-            <span id="browserstack-status-badge" class="badge"></span>
-          </div>
-          <div id="browserstack-defaults" class="browserstack-defaults"></div>
-          <p class="muted" data-i18n="runs.browserstack.hint">Para ejecutar en la nube solo agrega BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env. El proyecto, la build y los navegadores se configuran automáticamente.</p>
-        </div>
+        <div class="runs-layout">
+          <div class="runs-main">
+            <div id="browserstack-run-banner" class="run-banner" hidden></div>
 
-        <div class="card">
-          <div class="card-head">
-            <div class="card-head-title">
-              <h3 data-i18n="runs.browserstack.history">Ejecuciones en la nube</h3>
+            <div class="card browserstack-summary">
+              <div class="browserstack-head">
+                <div class="logo-big" aria-hidden="true">☁️</div>
+                <div>
+                  <h3 data-i18n="runs.browserstack.title">BrowserStack</h3>
+                  <p id="browserstack-status-text" class="muted"></p>
+                </div>
+                <span id="browserstack-status-badge" class="badge"></span>
+              </div>
+              <div id="browserstack-defaults" class="browserstack-defaults"></div>
+              <p class="muted" data-i18n="runs.browserstack.hint">Para ejecutar en la nube solo agrega BROWSERSTACK_USERNAME y BROWSERSTACK_ACCESS_KEY en src/.env. El proyecto, la build y los navegadores se configuran automáticamente.</p>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div class="card-head-title">
+                  <h3 data-i18n="runs.results">Resultados de la ejecución</h3>
+                  <span id="browserstack-date-badge" class="badge"></span>
+                </div>
+                <div class="card-head-actions">
+                  <span id="browserstack-errors-count" class="badge fail"></span>
+                  <button type="button" id="browserstack-download" class="btn" data-i18n="runs.downloadZip" hidden>Descargar ZIP</button>
+                  <a id="browserstack-current-report" class="btn" target="_blank" rel="noopener" hidden data-i18n="runs.currentReport">Ver Reporte HTML</a>
+                </div>
+              </div>
+              <div class="metric-grid">
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.tests">🧪 Pruebas</span>
+                  <strong id="browserstack-metric-total" class="metric-value">—</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.passed">🟢 Passed</span>
+                  <strong id="browserstack-metric-passed" class="metric-value ok">—</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.failed">🔴 Failed</span>
+                  <strong id="browserstack-metric-failed" class="metric-value fail">—</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.skipped">⚪ Skipped</span>
+                  <strong id="browserstack-metric-skipped" class="metric-value warn">—</strong>
+                </div>
+              </div>
+              <div id="browserstack-run-meta" class="browserstack-defaults"></div>
+              <p id="browserstack-errors-empty" class="muted" hidden data-i18n="runs.browserstack.errorsEmpty">La ejecución de BrowserStack no registró errores.</p>
+              <div id="browserstack-errors" class="error-list"></div>
+            </div>
+          </div>
+
+          <aside class="runs-sidebar card" aria-label="Historial de ejecuciones de BrowserStack">
+            <div class="card-head">
+              <h3 data-i18n="runs.history.executions">Historial de ejecuciones</h3>
               <span id="browserstack-runs-count" class="badge"></span>
             </div>
-          </div>
-          <div id="runs-list-browserstack" class="browserstack-runs"></div>
-          <p id="runs-empty-browserstack" class="empty" hidden data-i18n="runs.browserstack.empty">Todavía no hay ejecuciones en BrowserStack.</p>
+            <div id="runs-list-browserstack" class="history-list"></div>
+            <p id="runs-empty-browserstack" class="empty" hidden data-i18n="runs.browserstack.empty">Todavía no hay ejecuciones en BrowserStack.</p>
+          </aside>
         </div>
       </div>
     </section>
@@ -394,110 +433,146 @@
       </div>
 
       <div id="ci-content" hidden>
-        <div class="ci-layout">
-          <section class="card ci-scan-card">
-            <div class="card-head">
-              <div class="card-head-title">
+        <div class="runs-layout">
+          <div class="runs-main">
+            <div id="ci-run-banner" class="run-banner" hidden></div>
+
+            <div class="card">
+              <div class="card-head">
+                <div class="card-head-title">
+                  <h3 data-i18n="ci.run.new">Ejecutar en GitHub Actions</h3>
+                  <span id="ci-repo" class="badge"></span>
+                </div>
+                <div class="card-head-actions">
+                  <button type="button" id="ci-refresh" class="btn ghost" data-i18n="ci.refresh">Actualizar</button>
+                  <button type="button" id="ci-import" class="btn primary" data-i18n="ci.import">Importar última</button>
+                </div>
+              </div>
+              <p id="ci-help" class="muted"></p>
+              <div class="ci-run-create">
+                <input id="ci-run-url" type="url" class="input" data-i18n-placeholder="ci.run.placeholder" placeholder="https://ejemplo.com" autocomplete="url" />
+                <button type="button" id="ci-run-start" class="btn primary" data-i18n="ci.run.start">Ejecutar en GitHub Actions</button>
+              </div>
+              <details class="ci-run-config">
+                <summary data-i18n="ci.run.config">Configuración del workflow</summary>
+                <p class="muted" data-i18n="ci.run.config.help">Estos valores se envían al workflow; no modifican el archivo YAML.</p>
+                <div class="ci-config-grid">
+                  <label>
+                    <span data-i18n="ci.run.scanType">Elementos</span>
+                    <select id="ci-run-scan-type" class="input">
+                      <option value="all" selected data-i18n="scans.create.type.all">Todos</option>
+                      <option value="links" data-i18n="scans.create.type.links">Enlaces</option>
+                      <option value="images" data-i18n="scans.create.type.images">Imágenes</option>
+                      <option value="forms" data-i18n="scans.create.type.forms">Formularios</option>
+                      <option value="buttons" data-i18n="scans.create.type.buttons">Botones</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span data-i18n="ci.run.depth">Profundidad</span>
+                    <input id="ci-run-depth" class="input" type="number" min="0" max="9999" value="999" />
+                  </label>
+                  <label>
+                    <span data-i18n="ci.run.maxPages">Máx. páginas</span>
+                    <input id="ci-run-max-pages" class="input" type="number" min="1" max="999999" value="999999" />
+                  </label>
+                  <label>
+                    <span data-i18n="ci.run.engine">Motor</span>
+                    <select id="ci-run-engine" class="input">
+                      <option value="both" selected>Playwright + Cucumber</option>
+                      <option value="playwright">Playwright</option>
+                      <option value="cucumber">Cucumber</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span data-i18n="ci.run.browsers">Navegadores</span>
+                    <select id="ci-run-browsers" class="input">
+                      <option value="chromium" selected>Chromium</option>
+                      <option value="chromium,firefox">Chromium + Firefox</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span data-i18n="ci.run.maxLinks">Enlaces por página</span>
+                    <input id="ci-run-max-links" class="input" type="number" min="1" max="500" value="40" />
+                  </label>
+                </div>
+              </details>
+              <p id="ci-run-status" class="muted"></p>
+              <div id="ci-run-progress-wrap" class="scan-progress-wrap" hidden>
+                <progress id="ci-run-progress" max="100" value="0"></progress>
+                <span id="ci-run-progress-label" class="muted"></span>
+              </div>
+            </div>
+
+            <div class="card" id="ci-results-card">
+              <div class="card-head">
+                <div class="card-head-title">
+                  <h3 data-i18n="runs.results">Resultados de la ejecución</h3>
+                  <span id="ci-date-badge" class="badge"></span>
+                </div>
+                <div class="card-head-actions">
+                  <span id="ci-errors-count" class="badge fail"></span>
+                  <button type="button" id="ci-download" class="btn" data-i18n="runs.downloadZip" hidden>Descargar ZIP</button>
+                  <a id="ci-current-report" class="btn" target="_blank" rel="noopener" hidden data-i18n="runs.currentReport">Ver Reporte HTML</a>
+                  <a id="ci-open-github" class="btn ghost" target="_blank" rel="noopener" hidden data-i18n="ci.open">Abrir en GitHub</a>
+                </div>
+              </div>
+              <div class="metric-grid">
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.tests">🧪 Pruebas</span>
+                  <strong id="ci-metric-total" class="metric-value">—</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.passed">🟢 Passed</span>
+                  <strong id="ci-metric-passed" class="metric-value ok">—</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.failed">🔴 Failed</span>
+                  <strong id="ci-metric-failed" class="metric-value fail">—</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label" data-i18n="runs.metric.skipped">⚪ Skipped</span>
+                  <strong id="ci-metric-skipped" class="metric-value warn">—</strong>
+                </div>
+              </div>
+              <div id="ci-run-meta" class="browserstack-defaults"></div>
+              <p id="ci-errors-empty" class="muted" hidden data-i18n="runs.browserstack.errorsEmpty">La ejecución no registró errores.</p>
+              <div id="ci-errors-list" class="error-list"></div>
+            </div>
+
+            <details class="card collapsible-card" id="ci-scan-card">
+              <summary class="card-head collapsible-head">
                 <h3 data-i18n="ci.scan.title">Scan importado</h3>
-                <span id="ci-scan-badge" class="badge"></span>
-              </div>
-            </div>
-            <div id="ci-scan-body"></div>
-          </section>
-
-          <section class="card ci-runs-card">
-            <div class="card-head">
-              <div class="card-head-title">
-                <h3 data-i18n="ci.runs.title">Ejecuciones recientes</h3>
-                <span id="ci-repo" class="badge"></span>
-              </div>
-              <div class="card-head-actions">
-                <button type="button" id="ci-refresh" class="btn ghost" data-i18n="ci.refresh">Actualizar</button>
-                <button type="button" id="ci-import" class="btn primary" data-i18n="ci.import">Importar última</button>
-              </div>
-            </div>
-            <p id="ci-help" class="muted"></p>
-            <div class="ci-run-create">
-              <input id="ci-run-url" type="url" class="input" data-i18n-placeholder="ci.run.placeholder" placeholder="https://ejemplo.com" autocomplete="url" />
-              <button type="button" id="ci-run-start" class="btn primary" data-i18n="ci.run.start">Ejecutar en GitHub Actions</button>
-            </div>
-            <details class="ci-run-config">
-              <summary data-i18n="ci.run.config">Configuración del workflow</summary>
-              <p class="muted" data-i18n="ci.run.config.help">Estos valores se envían al workflow; no modifican el archivo YAML.</p>
-              <div class="ci-config-grid">
-                <label>
-                  <span data-i18n="ci.run.scanType">Elementos</span>
-                  <select id="ci-run-scan-type" class="input">
-                    <option value="all" selected data-i18n="scans.create.type.all">Todos</option>
-                    <option value="links" data-i18n="scans.create.type.links">Enlaces</option>
-                    <option value="images" data-i18n="scans.create.type.images">Imágenes</option>
-                    <option value="forms" data-i18n="scans.create.type.forms">Formularios</option>
-                    <option value="buttons" data-i18n="scans.create.type.buttons">Botones</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="ci.run.depth">Profundidad</span>
-                  <input id="ci-run-depth" class="input" type="number" min="0" max="9999" value="999" />
-                </label>
-                <label>
-                  <span data-i18n="ci.run.maxPages">Máx. páginas</span>
-                  <input id="ci-run-max-pages" class="input" type="number" min="1" max="999999" value="999999" />
-                </label>
-                <label>
-                  <span data-i18n="ci.run.engine">Motor</span>
-                  <select id="ci-run-engine" class="input">
-                    <option value="both" selected>Playwright + Cucumber</option>
-                    <option value="playwright">Playwright</option>
-                    <option value="cucumber">Cucumber</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="ci.run.browsers">Navegadores</span>
-                  <select id="ci-run-browsers" class="input">
-                    <option value="chromium" selected>Chromium</option>
-                    <option value="chromium,firefox">Chromium + Firefox</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="ci.run.maxLinks">Enlaces por página</span>
-                  <input id="ci-run-max-links" class="input" type="number" min="1" max="500" value="40" />
-                </label>
-              </div>
+                <span class="collapse-meta">
+                  <span id="ci-scan-badge" class="badge"></span>
+                  <span class="collapse-chevron" aria-hidden="true">▾</span>
+                </span>
+              </summary>
+              <div id="ci-scan-body"></div>
             </details>
-            <p id="ci-run-status" class="muted"></p>
-            <div id="ci-run-progress-wrap" class="scan-progress-wrap" hidden>
-              <progress id="ci-run-progress" max="100" value="0"></progress>
-              <span id="ci-run-progress-label" class="muted"></span>
-            </div>
-            <div id="ci-runs" class="list"></div>
-            <p id="ci-empty" class="empty" hidden></p>
-          </section>
-        </div>
 
-        <section id="ci-imported-card" class="card" hidden>
-          <div class="card-head">
-            <div class="card-head-title">
-              <h3 data-i18n="ci.imported.title">Reportes importados</h3>
+            <details class="card collapsible-card" id="ci-remote-card">
+              <summary class="card-head collapsible-head">
+                <h3 data-i18n="ci.runs.title">Ejecuciones recientes</h3>
+                <span class="collapse-meta">
+                  <span id="ci-remote-count" class="badge"></span>
+                  <span id="ci-hidden-note" class="badge" hidden></span>
+                  <span class="collapse-chevron" aria-hidden="true">▾</span>
+                </span>
+              </summary>
+              <p id="ci-hidden-help" class="muted" hidden></p>
+              <div id="ci-runs" class="list"></div>
+              <p id="ci-empty" class="empty" hidden></p>
+            </details>
+          </div>
+
+          <aside class="runs-sidebar card" aria-label="Historial de ejecuciones importadas">
+            <div class="card-head">
+              <h3 data-i18n="ci.history.title">Historial de importados</h3>
               <span id="ci-imported-count" class="badge"></span>
             </div>
-          </div>
-          <div id="ci-imported-list" class="list"></div>
-        </section>
-
-        <section id="ci-errors-card" class="card" hidden>
-          <div class="card-head">
-            <div class="card-head-title">
-              <h3 id="ci-errors-title" data-i18n="ci.errors.title">Errores del reporte importado</h3>
-              <span id="ci-errors-count" class="badge fail"></span>
-            </div>
-          </div>
-          <p id="ci-errors-empty" class="muted" hidden data-i18n="ci.errors.empty">El reporte importado no registró errores.</p>
-          <div id="ci-errors-list" class="error-list"></div>
-        </section>
-
-        <div id="ci-last" class="card" hidden>
-          <h3 data-i18n="ci.last.title">Última importación</h3>
-          <p id="ci-last-text" class="muted"></p>
+            <div id="ci-imported-list" class="history-list"></div>
+            <p id="ci-imported-empty" class="empty" hidden data-i18n="ci.history.empty">Todavía no hay reportes de GitHub importados.</p>
+          </aside>
         </div>
       </div>
     </section>

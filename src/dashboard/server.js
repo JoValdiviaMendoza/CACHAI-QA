@@ -1562,6 +1562,163 @@ function serveStatic(res, urlPath) {
 }
 
 // ------------------------------------------------------------------
+// Descargas (archivos y ZIP generados al vuelo)
+// ------------------------------------------------------------------
+
+function resolveDownloadPath(rel) {
+  if (!rel || typeof rel !== 'string') return null;
+  const full = path.resolve(ROOT, rel);
+  const allowed = [
+    path.join(ROOT, 'reports'),
+    path.join(ROOT, 'scan-report'),
+    path.join(ROOT, 'test-results')
+  ];
+  const inside = allowed.some((dir) => full === dir || full.startsWith(dir + path.sep));
+  return inside ? full : null;
+}
+
+function safeDownloadName(value) {
+  return String(value || 'cacai-qa')
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90) || 'cacai-qa';
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buffer.length; i++) {
+    crc = CRC_TABLE[(crc ^ buffer[i]) & 0xFF] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function dosDateTime(date) {
+  const time = ((date.getHours() & 31) << 11)
+    | ((date.getMinutes() & 63) << 5)
+    | ((Math.floor(date.getSeconds() / 2)) & 31);
+  const day = (((date.getFullYear() - 1980) & 127) << 9)
+    | (((date.getMonth() + 1) & 15) << 5)
+    | (date.getDate() & 31);
+  return { time, day };
+}
+
+const ZIP_MAX_BYTES = 500 * 1024 * 1024;
+
+/** Envía una carpeta como ZIP (método store, sin dependencias). */
+function sendZip(res, targetDir) {
+  const entries = [];
+  const walk = (dir, prefix) => {
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, item.name);
+      const rel = (prefix ? prefix + '/' + item.name : item.name).replace(/\\/g, '/');
+      if (item.isDirectory()) walk(full, rel);
+      else if (item.isFile()) {
+        const st = safeStat(full);
+        if (st) entries.push({ full, rel, size: st.size });
+      }
+    }
+  };
+
+  try {
+    walk(targetDir, '');
+  } catch (e) {
+    return sendJson(res, 500, { error: 'No se pudo leer la carpeta: ' + String(e) });
+  }
+
+  const total = entries.reduce((sum, entry) => sum + entry.size, 0);
+  if (total > ZIP_MAX_BYTES) {
+    return sendJson(res, 413, {
+      error: 'La carpeta supera los 500 MB. Abre el reporte y descarga archivos individuales.'
+    });
+  }
+
+  const now = new Date();
+  const stamp = dosDateTime(now);
+  const central = [];
+  let offset = 0;
+
+  res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="${safeDownloadName(path.basename(targetDir))}.zip"`,
+    'Cache-Control': 'no-store'
+  });
+
+  for (const entry of entries) {
+    let data;
+    try {
+      data = fs.readFileSync(entry.full);
+    } catch {
+      continue;
+    }
+    const name = Buffer.from(entry.rel, 'utf8');
+    const crc = crc32(data);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(stamp.time, 10);
+    local.writeUInt16LE(stamp.day, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+
+    res.write(local);
+    res.write(name);
+    res.write(data);
+
+    const cen = Buffer.alloc(46);
+    cen.writeUInt32LE(0x02014b50, 0);
+    cen.writeUInt16LE(20, 4);
+    cen.writeUInt16LE(20, 6);
+    cen.writeUInt16LE(0x0800, 8);
+    cen.writeUInt16LE(0, 10);
+    cen.writeUInt16LE(stamp.time, 12);
+    cen.writeUInt16LE(stamp.day, 14);
+    cen.writeUInt32LE(crc, 16);
+    cen.writeUInt32LE(data.length, 20);
+    cen.writeUInt32LE(data.length, 24);
+    cen.writeUInt16LE(name.length, 28);
+    cen.writeUInt16LE(0, 30);
+    cen.writeUInt16LE(0, 32);
+    cen.writeUInt16LE(0, 34);
+    cen.writeUInt16LE(0, 36);
+    cen.writeUInt32LE(0, 38);
+    cen.writeUInt32LE(offset, 42);
+
+    central.push(Buffer.concat([cen, name]));
+    offset += 30 + name.length + data.length;
+  }
+
+  const centralBuf = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralBuf.length, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+
+  res.write(centralBuf);
+  res.end(end);
+}
+
+// ------------------------------------------------------------------
 // Auditoría local desde el dashboard
 // ------------------------------------------------------------------
 
@@ -1938,6 +2095,32 @@ async function handle(req, res) {
     }
   }
 
+  if (pathname === '/api/download' && method === 'GET') {
+    const full = resolveDownloadPath(parsed.searchParams.get('path'));
+    if (!full || !fs.existsSync(full)) return sendJson(res, 404, { error: 'Archivo no encontrado' });
+    const st = safeStat(full);
+    if (!st) return sendJson(res, 404, { error: 'Archivo no encontrado' });
+
+    try {
+      if (st.isDirectory()) return sendZip(res, full);
+      const ext = path.extname(full).toLowerCase();
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${safeDownloadName(path.basename(full))}"`,
+        'Content-Length': st.size,
+        'Cache-Control': 'no-store'
+      });
+      const stream = fs.createReadStream(full);
+      stream.on('error', () => { try { res.destroy(); } catch { /* ignore */ } });
+      stream.pipe(res);
+      return;
+    } catch (e) {
+      if (!res.headersSent) return sendJson(res, 500, { error: 'No se pudo descargar: ' + String(e) });
+      try { res.destroy(); } catch { /* ignore */ }
+      return;
+    }
+  }
+
   if (pathname === '/api/tests' && method === 'GET') {
     try { return sendJson(res, 200, getTestsInfo()); }
     catch (e) { return sendJson(res, 500, { error: String(e) }); }
@@ -2031,6 +2214,16 @@ async function handle(req, res) {
       return sendJson(res, 200, result);
     } catch (e) {
       return sendJson(res, 500, { error: String(e) });
+    }
+  }
+
+  if (pathname === '/api/ci/hide' && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const result = githubActions.setHidden(body);
+      return sendJson(res, 200, result);
+    } catch (e) {
+      return sendJson(res, 400, { error: String(e) });
     }
   }
 

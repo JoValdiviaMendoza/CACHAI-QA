@@ -12,27 +12,35 @@ const state = {
   overview: null,
   scanFilter: 'quick',
   runFilter: 'playwright',
-  expandedRunGroups: { playwright: {}, cucumber: {} },
-  activeRunGroup: { playwright: null, cucumber: null },
+  expandedRunGroups: { playwright: {}, cucumber: {}, browserstack: {} },
+  activeRunGroup: { playwright: null, cucumber: null, browserstack: null },
   homeSegment: 'error',
   homeShowAll: false,
   aboutTab: 'how',
   scanFavorites: [],
   scanJob: null,
   browserstack: null,
-  selectedRun: { playwright: null, cucumber: null },
-  runDetail: { playwright: null, cucumber: null },
-  runDetailLoading: { playwright: false, cucumber: false },
+  selectedRun: { playwright: null, cucumber: null, browserstack: null },
+  runDetail: { playwright: null, cucumber: null, browserstack: null },
+  runDetailLoading: { playwright: false, cucumber: false, browserstack: false },
   ci: {
     config: null,
     runs: [],
     scan: null,
+    scanFile: null,
     errors: [],
-    errorReportLoading: false,
+    detail: null,
+    detailCucumber: null,
+    detailLoading: false,
     loading: false,
     importing: false,
     dispatching: false,
     error: '',
+    selectedRunId: null,
+    skipAutoImport: false,
+    expandedGroups: {},
+    activeGroup: null,
+    remoteOpened: false,
     autoImporting: false
   }
 };
@@ -94,6 +102,7 @@ const I18N = {
     'ci.imported.viewScan': 'Ver scan',
     'ci.imported.detail': 'Ver detalle',
     'ci.imported.delete': 'Eliminar reporte',
+    'ci.imported.defects': 'Defectos (MD)',
     'ci.imported.deleted': 'Reporte importado eliminado.',
     'ci.help': 'Importa una ejecución para que sus escaneos y reportes aparezcan en Inicio, Escaneos y Ejecuciones.',
     'ci.empty': 'No hay ejecuciones recientes.',
@@ -129,6 +138,19 @@ const I18N = {
     'ci.open': 'Abrir en GitHub',
     'ci.branch': 'Rama',
     'ci.noConfig': 'Falta configuración de GitHub Actions.',
+    'ci.history.title': 'Historial de importados',
+    'ci.history.empty': 'Todavía no hay reportes de GitHub importados.',
+    'ci.history.run': 'Importación {n}',
+    'ci.run.new': 'Ejecutar en GitHub Actions',
+    'ci.hide': 'Ocultar',
+    'ci.hidden.note': '{n} ocultas',
+    'ci.hidden.help': 'Las ejecuciones ocultas no se muestran. Puedes restaurarlas cuando quieras.',
+    'ci.hidden.restore': 'Restaurar ocultas',
+    'ci.hidden.restored': 'Ejecuciones restauradas.',
+    'ci.hidden.done': 'Ejecución oculta.',
+    'ci.detail.empty': 'Selecciona una ejecución importada para ver sus resultados.',
+    'ci.detail.loading': 'Cargando resultados de la ejecución…',
+    'ci.selected': 'Viendo ejecución #{id} · {date}',
     'about.title': '¿Qué hace CACHAI-QA?',
     'about.tab.how': 'Cómo funciona',
     'about.tab.glossary': 'Glosario',
@@ -299,6 +321,15 @@ const I18N = {
     'runs.browserstack.delete': 'Eliminar ejecución',
     'runs.browserstack.local': 'Túnel local',
     'runs.browserstack.cloud': 'Nube',
+    'runs.browserstack.build': 'Build',
+    'runs.browserstack.details': 'Detalles de la nube',
+    'runs.browserstack.errorsEmpty': 'La ejecución de BrowserStack no registró errores.',
+    'runs.browserstack.pending': 'Selecciona una ejecución de la nube para ver sus resultados.',
+    'runs.download': 'Descargar',
+    'runs.downloadZip': 'Descargar ZIP',
+    'runs.downloadError': 'No se pudo descargar el paquete.',
+    'runs.cloudBadge': '☁️ Cloud',
+    'runs.pagesLabel': 'Páginas',
     'error.location': 'Dirección del error (ubicación)',
     'error.affected': 'URL afectada',
     'error.browser': 'Navegador',
@@ -309,6 +340,7 @@ const I18N = {
     'error.selector': 'Selector afectado',
     'error.diagnosis': 'Código de error (diagnóstico técnico)',
     'error.solution': 'Glosario de solución (recomendación)',
+    'error.glossaryHint': 'Ver este código en el glosario',
     'error.attachments': 'Evidencias',
     'error.viewVideo': 'Ver Replay',
     'error.viewContext': 'Ver contexto del error',
@@ -369,6 +401,7 @@ const I18N = {
     'ci.imported.viewScan': 'View scan',
     'ci.imported.detail': 'View details',
     'ci.imported.delete': 'Delete report',
+    'ci.imported.defects': 'Defects (MD)',
     'ci.imported.deleted': 'Imported report deleted.',
     'ci.help': 'Import a run so its scans and reports appear in Home, Scans and Runs.',
     'ci.empty': 'No recent runs.',
@@ -404,6 +437,19 @@ const I18N = {
     'ci.open': 'Open on GitHub',
     'ci.branch': 'Branch',
     'ci.noConfig': 'GitHub Actions configuration is missing.',
+    'ci.history.title': 'Imported run history',
+    'ci.history.empty': 'No GitHub reports have been imported yet.',
+    'ci.history.run': 'Import {n}',
+    'ci.run.new': 'Run on GitHub Actions',
+    'ci.hide': 'Hide',
+    'ci.hidden.note': '{n} hidden',
+    'ci.hidden.help': 'Hidden runs are not shown. You can restore them at any time.',
+    'ci.hidden.restore': 'Restore hidden',
+    'ci.hidden.restored': 'Runs restored.',
+    'ci.hidden.done': 'Run hidden.',
+    'ci.detail.empty': 'Select an imported run to see its results.',
+    'ci.detail.loading': 'Loading run results…',
+    'ci.selected': 'Viewing run #{id} · {date}',
     'about.title': 'What does CACHAI-QA do?',
     'about.tab.how': 'How it works',
     'about.tab.glossary': 'Glossary',
@@ -574,6 +620,15 @@ const I18N = {
     'runs.browserstack.delete': 'Delete run',
     'runs.browserstack.local': 'Local tunnel',
     'runs.browserstack.cloud': 'Cloud',
+    'runs.browserstack.build': 'Build',
+    'runs.browserstack.details': 'Cloud details',
+    'runs.browserstack.errorsEmpty': 'The BrowserStack run recorded no errors.',
+    'runs.browserstack.pending': 'Select a cloud run to see its results.',
+    'runs.download': 'Download',
+    'runs.downloadZip': 'Download ZIP',
+    'runs.downloadError': 'Could not download the package.',
+    'runs.cloudBadge': '☁️ Cloud',
+    'runs.pagesLabel': 'Pages',
     'error.location': 'Error location',
     'error.affected': 'Affected URL',
     'error.browser': 'Browser',
@@ -584,6 +639,7 @@ const I18N = {
     'error.selector': 'Affected selector',
     'error.diagnosis': 'Error code (technical diagnosis)',
     'error.solution': 'Solution glossary (recommendation)',
+    'error.glossaryHint': 'View this code in the glossary',
     'error.attachments': 'Evidence',
     'error.viewVideo': 'View replay',
     'error.viewContext': 'View error context',
@@ -626,6 +682,19 @@ const ABOUT = {
     glossaryTitle: 'Glosario de errores comunes',
     glossarySubtitle: 'Qué significa cada término que aparece en el panel.',
     glossary: [
+      {
+        title: 'Códigos de diagnóstico',
+        items: [
+          { key: 'http', term: '404 / 4xx / 5xx (HTTP)', def: 'El recurso respondió con un estado HTTP. 404 indica que la URL no existe; 5xx es un fallo del servidor; otros 4xx son peticiones rechazadas.' },
+          { key: 'IMG', term: '[IMG] Imagen rota', def: 'La imagen no se cargó o tiene dimensiones naturales iguales a cero.' },
+          { key: 'JS', term: '[JS] Error de JavaScript', def: 'La página lanzó una excepción durante la carga o la interacción.' },
+          { key: 'FORM', term: '[FORM] Error en formulario', def: 'El formulario no está presente, visible o habilitado como se esperaba.' },
+          { key: 'BTN', term: '[BTN] Error en botón', def: 'El botón no está visible o no está habilitado.' },
+          { key: 'VIS', term: '[VIS] Elemento no visible', def: 'El elemento existe en el DOM pero no está visible o no es interactuable en el momento de la prueba (locator, toBeVisible, hidden).' },
+          { key: 'NET', term: '[NET] Error de red o timeout', def: 'El navegador no pudo completar la petición: net::, ERR_, ECONN, ENOTFOUND, ETIMEDOUT o tiempo de espera agotado.' },
+          { key: 'ASSERT', term: '[ASSERT] Fallo de validación', def: 'La prueba no cumplió la condición esperada. Es el diagnóstico genérico cuando ningún otro código coincide.' }
+        ]
+      },
       {
         title: 'Enlaces y red',
         items: [
@@ -705,6 +774,19 @@ const ABOUT = {
     glossaryTitle: 'Common error glossary',
     glossarySubtitle: 'What each term in the panel means.',
     glossary: [
+      {
+        title: 'Diagnostic codes',
+        items: [
+          { key: 'http', term: '404 / 4xx / 5xx (HTTP)', def: 'The resource answered with an HTTP status. 404 means the URL does not exist; 5xx is a server failure; other 4xx are rejected requests.' },
+          { key: 'IMG', term: '[IMG] Broken image', def: 'The image did not load or has natural dimensions equal to zero.' },
+          { key: 'JS', term: '[JS] JavaScript error', def: 'The page threw an exception while loading or interacting.' },
+          { key: 'FORM', term: '[FORM] Form error', def: 'The form is not present, visible or enabled as expected.' },
+          { key: 'BTN', term: '[BTN] Button error', def: 'The button is not visible or not enabled.' },
+          { key: 'VIS', term: '[VIS] Element not visible', def: 'The element exists in the DOM but is not visible or interactable at test time (locator, toBeVisible, hidden).' },
+          { key: 'NET', term: '[NET] Network error or timeout', def: 'The browser could not complete the request: net::, ERR_, ECONN, ENOTFOUND, ETIMEDOUT or the timeout expired.' },
+          { key: 'ASSERT', term: '[ASSERT] Validation failure', def: 'The test did not meet the expected condition. It is the generic diagnosis when no other code matches.' }
+        ]
+      },
       {
         title: 'Links & network',
         items: [
@@ -844,6 +926,47 @@ function shortPath(value) {
   } catch {
     return value || '—';
   }
+}
+
+/** Devuelve la carpeta descargable de un reporte (index.html -> carpeta). */
+function reportDirOf(reportPath) {
+  if (!reportPath) return null;
+  return /\/index\.html$/i.test(reportPath)
+    ? reportPath.replace(/\/index\.html$/i, '')
+    : reportPath;
+}
+
+/** Descarga un archivo o carpeta de reports/ mediante /api/download. */
+function downloadReport(pathOrDir) {
+  if (!pathOrDir) {
+    toast(t('runs.downloadError'), true);
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = '/api/download?path=' + encodeURIComponent(pathOrDir);
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+/** Descarga la ejecución completa según su tipo. */
+function downloadRun(kind, reportPath) {
+  if (!reportPath) {
+    toast(t('runs.downloadError'), true);
+    return;
+  }
+  const target = kind === 'cucumber' ? reportPath : reportDirOf(reportPath);
+  downloadReport(target);
+}
+
+/** Descargas disponibles para una importación de GitHub Actions. */
+function downloadCiEntry(entry) {
+  if (!entry) return;
+  if (entry.reportPath) downloadReport(reportDirOf(entry.reportPath));
+  else if (entry.cucumberPath) downloadReport(entry.cucumberPath);
+  else if (entry.defectPath) downloadReport(entry.defectPath);
+  else toast(t('runs.downloadError'), true);
 }
 
 let toastTimer = null;
@@ -1116,7 +1239,8 @@ function errorCardHtml(error) {
       <details class="error-details">
         <summary class="error-summary">
           <span class="error-dot"></span>
-          <span class="error-code">[${esc(error.code || 'ERR')}]</span>
+          <button type="button" class="error-code" data-glossary-code="${esc(error.code || 'ERR')}"
+            title="${esc(t('error.glossaryHint'))}" aria-label="${esc(t('error.glossaryHint'))}">[${esc(error.code || 'ERR')}]</button>
           <span class="error-title">${esc(error.title || 'Error')}</span>
           <span class="error-summary-text">${esc(summaryText)}</span>
         </summary>
@@ -1134,6 +1258,7 @@ function errorCardHtml(error) {
           <section>
             <h4>⚠️ ${t('error.diagnosis')}</h4>
             <p>${esc(error.diagnosis || '')}</p>
+            <button type="button" class="btn ghost" data-glossary-code="${esc(error.code || 'ERR')}">📖 ${esc(t('error.glossaryHint'))}</button>
           </section>
           <section>
             <h4>💡 ${t('error.solution')}</h4>
@@ -1553,7 +1678,7 @@ async function deleteScan(file) {
     }
 
     toast(t('toast.deleted'));
-    await Promise.all([loadScans(), loadOverview(), loadRuns(), loadTests()]);
+    await Promise.all([loadScans(), loadOverview(), loadRuns(), loadTests(), loadCi(), loadBrowserStack()]);
   } catch {
     toast(t('toast.error'), true);
   }
@@ -1576,11 +1701,21 @@ function activeRun(kind) {
   if (state.selectedRun[kind]) {
     return state.runDetail[kind] || { available: false, loading: state.runDetailLoading[kind] };
   }
+  if (kind === 'browserstack') return null;
   return state.overview ? state.overview[kind] : null;
 }
 
+function runsForKind(kind) {
+  const runs = state.runs || [];
+  if (kind === 'browserstack') {
+    return runs.filter((run) => run.type === 'playwright' && run.provider === 'browserstack');
+  }
+  if (kind === 'playwright') return runs.filter((run) => run.type === 'playwright');
+  return runs.filter((run) => run.type === kind);
+}
+
 function runOrdinal(kind, reportPath) {
-  const runs = (state.runs || []).filter((run) => run.type === kind);
+  const runs = runsForKind(kind);
   const target = runs.find((run) => run.reportPath === reportPath);
   if (!target) return 0;
   const key = runGroupKey(target);
@@ -1646,6 +1781,7 @@ function clearSelectedRun(kind) {
   state.runDetailLoading[kind] = false;
   renderTests();
   renderRuns();
+  if (kind === 'browserstack') ensureBrowserstackSelection();
 }
 
 async function deleteRun(kind, reportPath) {
@@ -1663,8 +1799,17 @@ async function deleteRun(kind, reportPath) {
       state.runDetail[kind] = null;
       state.runDetailLoading[kind] = false;
     }
+    // El mismo reporte puede estar seleccionado en otro filtro (p. ej. un run
+    // de BrowserStack también aparece en Playwright).
+    for (const other of ['playwright', 'cucumber', 'browserstack']) {
+      if (state.selectedRun[other] === reportPath) {
+        state.selectedRun[other] = null;
+        state.runDetail[other] = null;
+        state.runDetailLoading[other] = false;
+      }
+    }
     toast(t('toast.runDeleted'));
-    await Promise.all([loadOverview(), loadRuns(), loadTests(), loadScans()]);
+    await Promise.all([loadOverview(), loadRuns(), loadTests(), loadScans(), loadCi(), loadBrowserStack()]);
   } catch {
     toast(t('toast.error'), true);
   }
@@ -1786,6 +1931,7 @@ function renderTests() {
 
   renderRunBanner('playwright');
   renderRunBanner('cucumber');
+  renderRunBanner('browserstack');
 
   const playwright = activeRun('playwright');
   const playwrightAvailable = Boolean(playwright && playwright.available);
@@ -1859,6 +2005,84 @@ function renderTests() {
     10,
     cucumberExecution && cucumberExecution.available ? cucumberExecution.errors : 0
   );
+
+  renderBrowserStackDetail();
+}
+
+/* ------------------------------------------------------------------ *
+ * Detalle de ejecución BrowserStack (reutiliza el formato Playwright)
+ * ------------------------------------------------------------------ */
+function renderBrowserStackDetail() {
+  const detail = activeRun('browserstack');
+  const available = Boolean(detail && detail.available);
+  const loading = Boolean(state.selectedRun.browserstack && state.runDetailLoading.browserstack);
+  const setMetric = (selector, value) => {
+    const el = $(selector);
+    if (el) el.textContent = available ? num(value) : '—';
+  };
+
+  setMetric('#browserstack-metric-total', detail && detail.total);
+  setMetric('#browserstack-metric-passed', detail && detail.successes);
+  setMetric('#browserstack-metric-failed', detail && detail.errors);
+  setMetric('#browserstack-metric-skipped', detail && detail.skipped);
+
+  const dateBadge = $('#browserstack-date-badge');
+  if (dateBadge) {
+    dateBadge.textContent = available
+      ? [relativeTime(detail.timestamp), fmtDateShort(detail.timestamp)].filter(Boolean).join(' · ')
+      : (loading ? t('runs.selectedLoading') : '');
+  }
+
+  const report = $('#browserstack-current-report');
+  if (report) {
+    if (available && detail.reportPath) {
+      report.href = detail.reportPath;
+      report.hidden = false;
+    } else {
+      report.hidden = true;
+      report.removeAttribute('href');
+    }
+  }
+
+  const download = $('#browserstack-download');
+  if (download) {
+    const downloadable = available && detail.reportPath;
+    download.hidden = !downloadable;
+    if (downloadable) download.dataset.download = detail.reportPath;
+    else delete download.dataset.download;
+  }
+
+  const meta = $('#browserstack-run-meta');
+  if (meta) {
+    const info = (available && detail.browserstack) || {};
+    const browsers = Array.isArray(info.browsers) && info.browsers.length
+      ? info.browsers.map((browser) => `<span class="badge">${esc(browser)}</span>`).join(' ')
+      : '';
+    const parts = [
+      info.build ? `<span class="badge">${esc(t('runs.browserstack.build'))}: ${esc(info.build)}</span>` : '',
+      info.local ? `<span class="badge">${esc(t('runs.browserstack.local'))}</span>` : '',
+      browsers,
+      info.dashboardUrl
+        ? `<a class="btn ghost" href="${esc(info.dashboardUrl)}" target="_blank" rel="noopener">${esc(t('runs.browserstack.open'))}</a>`
+        : ''
+    ].filter(Boolean);
+    meta.innerHTML = available ? parts.join(' ') : '';
+    meta.hidden = !available || parts.length === 0;
+  }
+
+  const empty = $('#browserstack-errors-empty');
+  if (empty) {
+    empty.hidden = available ? detail.errorsList.length > 0 : false;
+    empty.textContent = available ? t('runs.browserstack.errorsEmpty') : t('runs.browserstack.pending');
+  }
+  renderErrorCards(
+    available ? detail.errorsList : [],
+    $('#browserstack-errors'),
+    null,
+    $('#browserstack-errors-count'),
+    null,
+    available ? detail.errors : 0
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -1870,6 +2094,7 @@ async function loadRuns() {
     const json = await res.json();
     state.runs = json.runs || [];
     renderRuns();
+    await ensureBrowserstackSelection();
   } catch {
     toast(t('toast.error'), true);
   }
@@ -1880,9 +2105,9 @@ function renderRuns() {
 
   // Si la ejecución seleccionada ya no existe (por ejemplo, se eliminó su
   // escaneo), se vuelve automáticamente a la última ejecución.
-  for (const kind of ['playwright', 'cucumber']) {
+  for (const kind of ['playwright', 'cucumber', 'browserstack']) {
     const selected = state.selectedRun[kind];
-    if (selected && !runs.some((run) => run.type === kind && run.reportPath === selected)) {
+    if (selected && !runsForKind(kind).some((run) => run.reportPath === selected)) {
       state.selectedRun[kind] = null;
       state.runDetail[kind] = null;
       state.runDetailLoading[kind] = false;
@@ -1905,11 +2130,20 @@ function renderRuns() {
 
   const allPlaywrightRuns = runs.filter((run) => run.type === 'playwright');
   const allCucumberRuns = runs.filter((run) => run.type === 'cucumber');
+  const browserstackRunsAll = allPlaywrightRuns.filter((run) => run.provider === 'browserstack');
   const currentPlaywright = resolveCurrentPath(allPlaywrightRuns, playwrightExecution);
   const currentCucumber = resolveCurrentPath(allCucumberRuns, cucumberExecution);
+  const currentBrowserstack = playwrightExecution && playwrightExecution.provider === 'browserstack'
+    ? resolveCurrentPath(browserstackRunsAll, playwrightExecution)
+    : null;
 
   const playwrightRuns = withCurrentStats(allPlaywrightRuns, currentPlaywright, playwrightExecution);
   const cucumberRuns = withCurrentStats(allCucumberRuns, currentCucumber, cucumberExecution);
+  const browserstackRuns = withCurrentStats(
+    browserstackRunsAll,
+    currentBrowserstack,
+    playwrightExecution && playwrightExecution.provider === 'browserstack' ? playwrightExecution : null
+  );
 
   renderHistoryList(
     playwrightRuns,
@@ -1927,7 +2161,28 @@ function renderRuns() {
     '#cucumber-runs-count',
     'cucumber'
   );
+  renderHistoryList(
+    browserstackRuns,
+    currentBrowserstack,
+    '#runs-list-browserstack',
+    '#runs-empty-browserstack',
+    '#browserstack-runs-count',
+    'browserstack'
+  );
   renderBrowserStackPanel();
+}
+
+/** Selecciona automáticamente la ejecución cloud más reciente. */
+async function ensureBrowserstackSelection() {
+  if (state.selectedRun.browserstack || state.browserstackAutoSelecting) return;
+  const cloud = runsForKind('browserstack').sort((a, b) => runTimestamp(b) - runTimestamp(a));
+  if (cloud.length === 0) return;
+  state.browserstackAutoSelecting = true;
+  try {
+    await selectRun('browserstack', cloud[0].reportPath);
+  } finally {
+    state.browserstackAutoSelecting = false;
+  }
 }
 
 async function loadBrowserStack() {
@@ -1966,10 +2221,6 @@ function renderBrowserStackPanel() {
   const badge = $('#browserstack-status-badge');
   const text = $('#browserstack-status-text');
   const defaults = $('#browserstack-defaults');
-  const list = $('#runs-list-browserstack');
-  const empty = $('#runs-empty-browserstack');
-  const count = $('#browserstack-runs-count');
-  if (!list || !empty || !count) return;
 
   if (badge) {
     badge.textContent = status.configured
@@ -1986,48 +2237,6 @@ function renderBrowserStackPanel() {
     const items = Array.isArray(status.defaults) ? status.defaults : [];
     defaults.innerHTML = items.map((item) => `<span class="badge">${esc(item.label)}</span>`).join('');
   }
-
-  const runs = (state.runs || [])
-    .filter((run) => run.provider === 'browserstack' || run.browserstack)
-    .sort((a, b) => runTimestamp(b) - runTimestamp(a));
-  count.textContent = num(runs.length);
-  if (runs.length === 0) {
-    list.innerHTML = '';
-    empty.hidden = false;
-    return;
-  }
-  empty.hidden = true;
-  list.innerHTML = runs.map((run) => {
-    const meta = run.browserstack || {};
-    const report = run.reportPath
-      ? `<a class="btn" href="/${esc(run.reportPath)}" target="_blank" rel="noopener">${esc(t('runs.browserstack.report'))}</a>`
-      : '';
-    const external = meta.dashboardUrl
-      ? `<a class="btn ghost" href="${esc(meta.dashboardUrl)}" target="_blank" rel="noopener">${esc(t('runs.browserstack.open'))}</a>`
-      : '';
-    const local = meta.local ? ` <span class="badge">${esc(t('runs.browserstack.local'))}</span>` : '';
-    const browsers = Array.isArray(meta.browsers) && meta.browsers.length
-      ? meta.browsers.map((browser) => `<span class="badge">${esc(browser)}</span>`).join(' ')
-      : '';
-    return `
-      <article class="browserstack-run">
-        <div class="browserstack-run-main">
-          <div class="browserstack-run-title">
-            <strong>${esc(fmtDateShort(runTimestamp(run)))}</strong>
-            <span class="badge info">${esc(t('runs.browserstack.cloud'))}</span>${local}
-          </div>
-          <p class="scan-url">${esc(run.url || '—')}</p>
-          <p class="muted">${esc(runCounts(run))}${meta.build ? ` · build: ${esc(meta.build)}` : ''}</p>
-          <div class="browserstack-run-browsers">${browsers}</div>
-        </div>
-        <div class="browserstack-run-actions">
-          ${report}
-          ${external}
-          <button type="button" class="btn danger" data-browserstack-delete="${esc(run.reportPath)}"
-            title="${esc(t('runs.browserstack.delete'))}" aria-label="${esc(t('runs.browserstack.delete'))}">✕</button>
-        </div>
-      </article>`;
-  }).join('');
 }
 
 function resolveCurrentPath(runs, execution) {
@@ -2198,16 +2407,21 @@ function runItemHtml(run, currentPath, kind) {
   const title = t(numberKey, { n: run.ordinal });
   const counts = runCounts(run);
   const pages = run.pages != null ? ` · ${esc(run.pages)} ${t('runs.pagesShort')}` : '';
+  const cloud = run.provider === 'browserstack'
+    ? ` <span class="badge info">${esc(t('runs.cloudBadge'))}</span>`
+    : '';
 
   return `
     <div class="history-item${active ? ' active' : ''}">
       <button type="button" class="history-select" data-run-select="${esc(run.reportPath)}">
         <span class="history-main">
-          <span class="history-title">${esc(title)}${current ? ` <span class="badge ok">${t('runs.current')}</span>` : ''}</span>
+          <span class="history-title">${esc(title)}${cloud}${current ? ` <span class="badge ok">${t('runs.current')}</span>` : ''}</span>
           <span class="history-date">${esc(fmtDateShort(runTimestamp(run)))}</span>
           <span class="history-meta">${esc(counts)}${pages}</span>
         </span>
       </button>
+      <button type="button" class="history-download" data-run-download="${esc(run.reportPath)}" data-run-kind="${esc(kind)}"
+        title="${esc(t('runs.download'))}" aria-label="${esc(t('runs.download'))}">⬇</button>
       <button type="button" class="history-delete" data-run-delete="${esc(run.reportPath)}"
         title="${esc(t('runs.delete'))}" aria-label="${esc(t('runs.delete'))}">✕</button>
     </div>`;
@@ -2297,7 +2511,7 @@ function renderAbout() {
             <section class="glossary-group" aria-label="${esc(group.title)}">
               <h4>${esc(group.title)}</h4>
               ${group.items.map((item) => `
-                <details class="glossary-item">
+                <details class="glossary-item" data-glossary-term="${esc(item.key || item.term)}">
                   <summary>
                     <span class="glossary-term">${esc(item.term)}</span>
                     <span class="glossary-chevron" aria-hidden="true">▾</span>
@@ -2353,6 +2567,24 @@ function setAboutTab(name) {
   renderAbout();
 }
 
+/** Abre el glosario en el código de diagnóstico indicado. */
+function openGlossaryCode(code) {
+  const raw = String(code || '').trim();
+  const key = /^\d{3}$/.test(raw) ? 'http' : raw.toUpperCase();
+  state.aboutTab = 'glossary';
+  setTab('about');
+  requestAnimationFrame(() => {
+    const items = $$('[data-glossary-term]');
+    const target = items.find((el) => String(el.dataset.glossaryTerm || '').toUpperCase() === key.toUpperCase())
+      || (key === 'ERR' ? items.find((el) => String(el.dataset.glossaryTerm || '').toUpperCase() === 'ASSERT') : null);
+    if (!target) return;
+    target.open = true;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const summary = target.querySelector('summary');
+    if (summary) summary.focus({ preventScroll: true });
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * GitHub Actions
  * ------------------------------------------------------------------ */
@@ -2379,13 +2611,14 @@ function ciStatusClass(run) {
   return '';
 }
 
-async function loadCiScan() {
+/** Carga el scan asociado a una importación concreta. */
+async function loadCiEntryScan(entry) {
+  state.ci.scan = null;
+  state.ci.scanFile = entry && entry.scan ? entry.scan : null;
+  if (!entry || !entry.scan) return;
   try {
-    const res = await fetch('/api/scan?file=' + encodeURIComponent('scan-report/ci-scan.json'));
-    if (!res.ok) {
-      state.ci.scan = null;
-      return;
-    }
+    const res = await fetch('/api/scan?file=' + encodeURIComponent(entry.scan));
+    if (!res.ok) return;
     const payload = await res.json();
     state.ci.scan = payload.data || null;
   } catch {
@@ -2429,6 +2662,7 @@ function renderCiScan() {
   const date = scan.timestamp ? fmtDateShort(Date.parse(scan.timestamp)) : '—';
   const downloads = Array.isArray(scan.downloads) ? scan.downloads.length : 0;
   const invalid = Array.isArray(scan.invalidLinks) ? scan.invalidLinks.length : 0;
+  const scanFile = state.ci.scanFile ? esc(state.ci.scanFile) : '';
   if (badge) {
     badge.textContent = Number(pages) === 1
       ? t('ci.scan.onePage')
@@ -2453,76 +2687,205 @@ function renderCiScan() {
       ${invalid > 0 ? stat(t('ci.scan.invalid'), num(invalid)) : ''}
     </div>
     <div class="ci-run-actions">
-      <button type="button" class="btn" data-ci-scan-view>${esc(t('ci.scan.view'))}</button>
+      <button type="button" class="btn" data-ci-scan-view="${scanFile}" ${scanFile ? '' : 'disabled'}>${esc(t('ci.scan.view'))}</button>
+      <button type="button" class="btn" data-ci-scan-download="${scanFile}" ${scanFile ? '' : 'disabled'}>⬇ ${esc(t('runs.download'))}</button>
+      <button type="button" class="btn danger" data-ci-scan-delete="${scanFile}" ${scanFile ? '' : 'disabled'}
+        title="${esc(t('runs.delete'))}" aria-label="${esc(t('runs.delete'))}">✕</button>
     </div>`;
 }
 
-async function loadCiErrors(runId) {
+function ciImportedRuns() {
   const config = state.ci.config || {};
-  const importedRuns = config.importedRuns || [];
-  const selectedId = runId || state.ci.selectedRunId || config.lastImportedRunId;
-  const entry = importedRuns.find((item) => String(item.runId) === String(selectedId));
-  state.ci.selectedRunId = entry ? String(entry.runId) : null;
-  const paths = [entry && entry.reportPath, entry && entry.cucumberPath].filter(Boolean);
-  state.ci.errors = [];
-  if (paths.length === 0) return;
+  return Array.isArray(config.importedRuns) ? config.importedRuns : [];
+}
 
-  state.ci.errorReportLoading = true;
+function ciEntryTimestamp(entry) {
+  const parsed = entry && entry.importedAt ? Date.parse(entry.importedAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function ciImportedOrdinal(entry) {
+  const list = [...ciImportedRuns()].sort((a, b) => ciEntryTimestamp(a) - ciEntryTimestamp(b));
+  return list.findIndex((item) => String(item.runId) === String(entry.runId)) + 1;
+}
+
+function ciSelectedEntry() {
+  const selected = state.ci.selectedRunId;
+  if (!selected) return null;
+  return ciImportedRuns().find((entry) => String(entry.runId) === String(selected)) || null;
+}
+
+/** Carga el detalle (Playwright y/o Cucumber) de una ejecución importada. */
+async function selectCiRun(runId) {
+  const entry = ciImportedRuns().find((item) => String(item.runId) === String(runId));
+  if (!entry) return;
+
+  state.ci.selectedRunId = String(entry.runId);
+  state.ci.detail = null;
+  state.ci.detailCucumber = null;
+  state.ci.detailLoading = true;
+  state.ci.errors = [];
+  renderCi();
+
+  const paths = [entry.reportPath, entry.cucumberPath].filter(Boolean);
   try {
     const responses = await Promise.all(paths.map(async (reportPath) => {
-      const res = await fetch('/api/run?path=' + encodeURIComponent(reportPath));
-      if (!res.ok) return null;
-      return res.json();
+      try {
+        const res = await fetch('/api/run?path=' + encodeURIComponent(reportPath));
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
     }));
+    const playwright = responses.find((detail) => detail && detail.type === 'playwright');
+    const cucumber = responses.find((detail) => detail && detail.type === 'cucumber');
+    if (String(state.ci.selectedRunId) !== String(entry.runId)) return;
+    state.ci.detail = playwright || cucumber || null;
+    state.ci.detailCucumber = cucumber || null;
     const errors = [];
     for (const detail of responses) {
       if (detail && Array.isArray(detail.errorsList)) errors.push(...detail.errorsList);
     }
     state.ci.errors = errors;
-  } catch {
-    state.ci.errors = [];
   } finally {
-    state.ci.errorReportLoading = false;
+    state.ci.detailLoading = false;
+    if (String(state.ci.selectedRunId) === String(entry.runId)) {
+      await loadCiEntryScan(entry);
+      renderCi();
+    }
   }
 }
 
-async function selectCiImported(runId) {
-  await loadCiErrors(runId);
-  renderCiErrors();
+/** Selecciona la última importación (o la indicada) al cargar el panel. */
+async function ensureCiSelection() {
+  const imported = ciImportedRuns();
+  const preferred = state.ci.config && state.ci.config.lastImportedRunId;
+  const target = imported.find((entry) => String(entry.runId) === String(state.ci.selectedRunId))
+    || imported.find((entry) => String(entry.runId) === String(preferred))
+    || imported[0];
+
+  if (!target) {
+    state.ci.selectedRunId = null;
+    state.ci.detail = null;
+    state.ci.detailCucumber = null;
+    state.ci.errors = [];
+    await loadCiEntryScan(null);
+    renderCi();
+    return;
+  }
+  await selectCiRun(target.runId);
 }
 
+/** Historial lateral de ejecuciones importadas, agrupado por host. */
 function renderCiImported() {
-  const card = $('#ci-imported-card');
   const list = $('#ci-imported-list');
+  if (!list) return;
+
+  const runs = ciImportedRuns();
   const count = $('#ci-imported-count');
-  if (!card || !list) return;
-  const runs = (state.ci.config && state.ci.config.importedRuns) || [];
-  card.hidden = runs.length === 0;
   if (count) count.textContent = num(runs.length);
-  list.innerHTML = runs.map((entry) => {
-    const date = entry.importedAt ? fmtDateShort(Date.parse(entry.importedAt)) : '—';
-    const reportLink = entry.reportPath
-      ? `<a class="btn" href="/${esc(entry.reportPath)}" target="_blank" rel="noopener">${esc(t('ci.imported.viewReport'))}</a>`
-      : '';
+  const empty = $('#ci-imported-empty');
+  if (empty) empty.hidden = runs.length > 0;
+
+  if (runs.length === 0) {
+    list.innerHTML = '';
+    state.ci.expandedGroups = {};
+    state.ci.activeGroup = null;
+    return;
+  }
+
+  const map = new Map();
+  for (const entry of runs) {
+    const key = entry.host || 'sin-url';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(entry);
+  }
+
+  const groups = [...map.entries()].map(([key, entries]) => {
+    entries.sort((a, b) => ciEntryTimestamp(b) - ciEntryTimestamp(a));
+    const chronological = [...entries].sort((a, b) => ciEntryTimestamp(a) - ciEntryTimestamp(b));
+    const ordinals = new Map();
+    chronological.forEach((entry, index) => ordinals.set(entry, index + 1));
+    return { key, entries, ordinals };
+  });
+  groups.sort((a, b) => ciEntryTimestamp(b.entries[0]) - ciEntryTimestamp(a.entries[0]));
+
+  const selected = ciSelectedEntry();
+  const activeKey = selected
+    ? (selected.host || 'sin-url')
+    : groups[0].key;
+  state.ci.activeGroup = activeKey;
+  state.ci.expandedGroups[activeKey] = true;
+
+  list.innerHTML = groups.map((group) => {
+    const open = Boolean(state.ci.expandedGroups[group.key]);
+    const label = group.key === 'sin-url' ? t('runs.group.noUrl') : group.key;
     return `
-      <article class="ci-run">
-        <div class="ci-run-main">
-          <div class="ci-run-title">#${esc(entry.runId)} · ${esc(date)}</div>
-          <div class="ci-run-meta"><span>${esc(entry.scan || '—')}</span></div>
+      <details class="url-group" data-ci-group="${esc(group.key)}"${open ? ' open' : ''}>
+        <summary class="url-group-head">
+          <span class="url-group-dot run" aria-hidden="true"></span>
+          <span class="url-group-main">
+            <span class="url-group-name">${esc(label)}</span>
+            <span class="url-group-meta">${esc(group.entries.length === 1 ? t('runs.group.countOne') : t('runs.group.count', { n: group.entries.length }))}</span>
+          </span>
+          <span class="url-group-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="url-group-runs">
+          ${group.entries.map((entry) => {
+            const active = selected && String(selected.runId) === String(entry.runId);
+            const date = entry.importedAt ? fmtDateShort(Date.parse(entry.importedAt)) : '—';
+            const ordinal = group.ordinals.get(entry) || 0;
+            const engines = [
+              entry.reportPath ? 'Playwright' : '',
+              entry.cucumberPath ? 'Cucumber' : ''
+            ].filter(Boolean).join(' + ');
+            const meta = engines || entry.scan || '—';
+            return `
+              <div class="history-item${active ? ' active' : ''}">
+                <button type="button" class="history-select" data-ci-select="${esc(entry.runId)}">
+                  <span class="history-main">
+                    <span class="history-title">${esc(t('ci.history.run', { n: ordinal }))}</span>
+                    <span class="history-date">#${esc(entry.runId)} · ${esc(date)}</span>
+                    <span class="history-meta">${esc(meta)}</span>
+                  </span>
+                </button>
+                <button type="button" class="history-download" data-ci-download="${esc(entry.runId)}"
+                  title="${esc(t('runs.download'))}" aria-label="${esc(t('runs.download'))}">⬇</button>
+                <button type="button" class="history-delete" data-ci-delete="${esc(entry.runId)}"
+                  title="${esc(t('runs.delete'))}" aria-label="${esc(t('runs.delete'))}">✕</button>
+              </div>`;
+          }).join('')}
         </div>
-        <div class="ci-run-actions">
-          ${reportLink}
-          <button type="button" class="btn" data-ci-imported-detail="${esc(entry.runId)}">${esc(t('ci.imported.detail'))}</button>
-          <button type="button" class="btn" data-ci-scan-view="${esc(entry.scan || '')}" ${entry.scan ? '' : 'disabled'}>${esc(t('ci.imported.viewScan'))}</button>
-          <button type="button" class="btn danger" data-ci-imported-delete="${esc(entry.runId)}">${esc(t('ci.imported.delete'))}</button>
-        </div>
-      </article>`;
+      </details>`;
   }).join('');
+
+  list.querySelectorAll('details.url-group').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      const key = details.dataset.ciGroup;
+      if (!key) return;
+      state.ci.expandedGroups[key] = details.open;
+    });
+  });
 }
 
-async function deleteCiImported(runId) {
-  if (!runId) return;
-  if (!window.confirm(t('ci.imported.delete') + ' #' + runId + '?')) return;
+/** Borra el scan de una importación; si pertenece a una, elimina la importación. */
+async function deleteCiScan(file) {
+  if (!file) return;
+  const entry = ciImportedRuns().find((item) => item.scan === file);
+  if (entry) {
+    await deleteCiImported(entry.runId);
+    return;
+  }
+  await deleteScan(file);
+}
+
+async function deleteCiImported(runId) {  if (!runId) return;
+  const entry = ciImportedRuns().find((item) => String(item.runId) === String(runId));
+  const date = entry && entry.importedAt ? fmtDateShort(Date.parse(entry.importedAt)) : '#' + runId;
+  const ok = await confirmAction(t('ci.imported.delete') + ' · ' + date);
+  if (!ok) return;
+
   try {
     const res = await fetch('/api/ci/delete', {
       method: 'POST',
@@ -2532,33 +2895,237 @@ async function deleteCiImported(runId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || t('ci.imported.delete'));
     if (String(state.ci.selectedRunId) === String(runId)) state.ci.selectedRunId = null;
+    // Evita que la importación automática vuelva a crear la entrada eliminada.
+    state.ci.skipAutoImport = true;
     toast(t('ci.imported.deleted'));
-    await Promise.all([loadCi(), loadOverview(), loadScans(), loadTests(), loadRuns()]);
+    await Promise.all([loadCi(), loadOverview(), loadScans(), loadTests(), loadRuns(), loadBrowserStack()]);
   } catch (e) {
     toast(String(e && e.message ? e.message : e), true);
   }
 }
 
-function renderCiErrors() {
-  const card = $('#ci-errors-card');
-  if (!card) return;
-  const config = state.ci.config || {};
-  const selectedId = state.ci.selectedRunId || config.lastImportedRunId;
-  if (!selectedId) {
-    card.hidden = true;
-    return;
+async function hideCiRun(runId, hidden) {
+  try {
+    const res = await fetch('/api/ci/hide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId, hidden })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || t('ci.hide'));
+    toast(hidden ? t('ci.hidden.done') : t('ci.hidden.restored'));
+    await loadCi();
+  } catch (e) {
+    toast(String(e && e.message ? e.message : e), true);
   }
-  card.hidden = false;
-  const title = $('#ci-errors-title');
-  if (title) title.textContent = `${t('ci.errors.title')} #${selectedId}`;
+}
+
+async function restoreCiHidden() {
+  try {
+    const res = await fetch('/api/ci/hide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreAll: true })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || t('ci.hidden.restore'));
+    toast(t('ci.hidden.restored'));
+    await loadCi();
+  } catch (e) {
+    toast(String(e && e.message ? e.message : e), true);
+  }
+}
+
+function renderCiDetail() {
+  const entry = ciSelectedEntry();
+  const detail = state.ci.detail;
+  const available = Boolean(detail && detail.available);
+  const loading = Boolean(state.ci.detailLoading);
+  const cfg = state.ci.config || {};
+
+  const banner = $('#ci-run-banner');
+  if (banner) {
+    if (!entry) {
+      banner.hidden = true;
+      banner.innerHTML = '';
+    } else {
+      const date = entry.importedAt ? fmtDateShort(Date.parse(entry.importedAt)) : '';
+      const back = String(entry.runId) !== String(cfg.lastImportedRunId)
+        ? `<button type="button" class="btn" data-ci-latest>${t('runs.backToLatest')}</button>`
+        : '';
+      banner.hidden = false;
+      banner.innerHTML = `
+        <span class="run-banner-text">${loading
+          ? esc(t('ci.detail.loading'))
+          : esc(t('ci.selected', { id: entry.runId, date }))}</span>
+        ${back}`;
+    }
+  }
+
+  const setMetric = (selector, value) => {
+    const el = $(selector);
+    if (el) el.textContent = available ? num(value) : '—';
+  };
+  setMetric('#ci-metric-total', detail && detail.total);
+  setMetric('#ci-metric-passed', detail && detail.successes);
+  setMetric('#ci-metric-failed', detail && detail.errors);
+  setMetric('#ci-metric-skipped', detail && detail.skipped);
+
+  const dateBadge = $('#ci-date-badge');
+  if (dateBadge) {
+    if (entry && entry.importedAt) {
+      const imported = Date.parse(entry.importedAt);
+      dateBadge.textContent = [relativeTime(imported), fmtDateShort(imported)].filter(Boolean).join(' · ');
+    } else {
+      dateBadge.textContent = '';
+    }
+  }
+
+  const report = $('#ci-current-report');
+  if (report) {
+    const reportPath = entry && (entry.reportPath || entry.cucumberPath);
+    if (reportPath) {
+      report.href = '/' + reportPath;
+      report.hidden = false;
+    } else {
+      report.hidden = true;
+      report.removeAttribute('href');
+    }
+  }
+
+  const download = $('#ci-download');
+  if (download) {
+    const downloadable = Boolean(entry && (entry.reportPath || entry.cucumberPath || entry.defectPath));
+    download.hidden = !downloadable;
+    if (downloadable) download.dataset.ciEntry = entry.runId;
+    else delete download.dataset.ciEntry;
+  }
+
+  const remote = entry ? (state.ci.runs || []).find((run) => String(run.id) === String(entry.runId)) : null;
+  const github = $('#ci-open-github');
+  if (github) {
+    const href = (entry && entry.htmlUrl) || (remote && remote.htmlUrl) || '';
+    if (href) {
+      github.href = href;
+      github.hidden = false;
+    } else {
+      github.hidden = true;
+      github.removeAttribute('href');
+    }
+  }
+
+  const meta = $('#ci-run-meta');
+  if (meta) {
+    if (!entry) {
+      meta.innerHTML = '';
+      meta.hidden = true;
+    } else {
+      const parts = [
+        `<span class="badge">#${esc(entry.runId)}</span>`,
+        remote && remote.branch ? `<span class="badge">${esc(t('ci.branch'))}: ${esc(remote.branch)}</span>` : '',
+        remote ? `<span class="badge">${esc(ciStatusLabel(remote))}</span>` : '',
+        entry.reportPath ? `<span class="badge info">🎭 Playwright</span>` : '',
+        entry.cucumberPath ? `<span class="badge info">🥒 Cucumber</span>` : '',
+        entry.defectPath
+          ? `<a class="btn ghost" href="/${esc(entry.defectPath)}" target="_blank" rel="noopener">${esc(t('ci.imported.defects') || 'Defectos')}</a>`
+          : '',
+        entry.scan
+          ? `<button type="button" class="btn ghost" data-ci-scan-view="${esc(entry.scan)}">${esc(t('ci.scan.view'))}</button>`
+          : ''
+      ].filter(Boolean);
+      meta.innerHTML = parts.join(' ');
+      meta.hidden = parts.length === 0;
+    }
+  }
+
+  const empty = $('#ci-errors-empty');
+  if (empty) {
+    const errors = Array.isArray(state.ci.errors) ? state.ci.errors : [];
+    empty.hidden = available && errors.length > 0;
+    empty.textContent = !entry
+      ? t('ci.detail.empty')
+      : loading
+        ? t('ci.detail.loading')
+        : t('ci.errors.empty');
+  }
+
   renderErrorCards(
-    state.ci.errors,
+    Array.isArray(state.ci.errors) ? state.ci.errors : [],
     $('#ci-errors-list'),
-    $('#ci-errors-empty'),
+    null,
     $('#ci-errors-count'),
     null,
-    state.ci.errors.length
+    available ? detail.errors : (state.ci.errors || []).length
   );
+}
+
+function renderCiRemoteRuns(cfg) {
+  const list = $('#ci-runs');
+  const empty = $('#ci-empty');
+  const count = $('#ci-remote-count');
+  const runs = state.ci.runs || [];
+  if (!list || !empty) return;
+  if (count) count.textContent = num(runs.length);
+
+  const hiddenRuns = Array.isArray(cfg.hiddenRuns) ? cfg.hiddenRuns : [];
+  const hiddenNote = $('#ci-hidden-note');
+  const hiddenHelp = $('#ci-hidden-help');
+  if (hiddenNote) {
+    hiddenNote.hidden = hiddenRuns.length === 0;
+    hiddenNote.textContent = t('ci.hidden.note', { n: hiddenRuns.length });
+  }
+  if (hiddenHelp) {
+    hiddenHelp.hidden = hiddenRuns.length === 0;
+    hiddenHelp.innerHTML = `${esc(t('ci.hidden.help'))}
+      <button type="button" class="btn ghost" data-ci-hidden-restore>${esc(t('ci.hidden.restore'))}</button>`;
+  }
+
+  if (state.ci.error) {
+    list.innerHTML = '';
+    empty.hidden = false;
+    empty.textContent = state.ci.error;
+    return;
+  }
+  if (runs.length === 0) {
+    list.innerHTML = '';
+    empty.hidden = false;
+    empty.textContent = t('ci.empty');
+    return;
+  }
+  empty.hidden = true;
+
+  list.innerHTML = runs.map((run) => {
+    const importedEntry = ciImportedRuns().find((item) => String(item.runId) === String(run.id));
+    const imported = Boolean(importedEntry);
+    const date = run.createdAt ? fmtDateShort(Date.parse(run.createdAt)) : '—';
+    const status = ciStatusValue(run);
+    const actions = imported
+      ? `<button type="button" class="btn" data-ci-select="${esc(importedEntry.runId)}">${esc(t('ci.imported.detail'))}</button>
+         <button type="button" class="btn ghost" data-ci-hide="${esc(run.id)}">${esc(t('ci.hide'))}</button>`
+      : `<button type="button" class="btn ${status === 'success' ? 'primary' : ''}" data-ci-import="${esc(run.id)}" ${status !== 'success' || state.ci.importing ? 'disabled' : ''}>
+           ${esc(t('ci.import.run'))}
+         </button>
+         <button type="button" class="btn ghost" data-ci-hide="${esc(run.id)}">${esc(t('ci.hide'))}</button>`;
+    return `
+      <article class="ci-run ${imported ? 'is-imported' : ''}">
+        <div class="ci-run-main">
+          <div class="ci-run-title">
+            <span class="ci-dot ${ciStatusClass(run)}" aria-hidden="true"></span>
+            #${esc(num(run.runNumber))} · ${esc(run.name || 'CACHAI-QA')}
+            ${imported ? `<span class="badge info">${esc(t('ci.imported'))}</span>` : ''}
+          </div>
+          <div class="ci-run-meta">
+            <span>${esc(t('ci.branch'))}: ${esc(run.branch || '—')}</span>
+            <span>${esc(date)}</span>
+            <span>${esc(ciStatusLabel(run))}</span>
+          </div>
+        </div>
+        <div class="ci-run-actions">
+          ${run.htmlUrl ? `<a class="btn ghost" href="${esc(run.htmlUrl)}" target="_blank" rel="noopener">${esc(t('ci.open'))}</a>` : ''}
+          ${actions}
+        </div>
+      </article>`;
+  }).join('');
 }
 
 function renderCi() {
@@ -2568,129 +3135,94 @@ function renderCi() {
 
   const cfg = state.ci.config || {};
   const configured = Boolean(cfg.configured);
-  $('#ci-badge').textContent = configured
-    ? (cfg.autoImport ? t('ci.auto') : t('ci.manual'))
-    : t('ci.noConfig');
+  const badge = $('#ci-badge');
+  if (badge) {
+    badge.textContent = configured
+      ? (cfg.autoImport ? t('ci.auto') : t('ci.manual'))
+      : t('ci.noConfig');
+  }
 
   configCard.hidden = configured;
   content.hidden = !configured;
 
   if (!configured) {
-    $('#ci-config-text').textContent = t('ci.config.text');
-    $('#ci-config-code').textContent = [
-      'GITHUB_REPO=tu-usuario/CACHAI-QA',
-      'GITHUB_TOKEN=github_pat_...',
-      'GITHUB_CI_AUTO_IMPORT=true'
-    ].join('\n');
+    const text = $('#ci-config-text');
+    if (text) text.textContent = t('ci.config.text');
+    const code = $('#ci-config-code');
+    if (code) {
+      code.textContent = [
+        'GITHUB_REPO=tu-usuario/CACHAI-QA',
+        'GITHUB_TOKEN=github_pat_...',
+        'GITHUB_CI_AUTO_IMPORT=true'
+      ].join('\n');
+    }
     return;
   }
 
-  $('#ci-repo').textContent = cfg.repo || '—';
-  $('#ci-help').textContent = t('ci.help');
+  const repo = $('#ci-repo');
+  if (repo) repo.textContent = cfg.repo || '—';
+  const help = $('#ci-help');
+  if (help) help.textContent = t('ci.help');
 
   const importButton = $('#ci-import');
-  const latestSuccess = state.ci.runs.find((run) => ciStatusValue(run) === 'success');
-  importButton.disabled = state.ci.importing || !latestSuccess;
-  importButton.textContent = state.ci.importing ? t('ci.importing') : t('ci.import');
+  if (importButton) {
+    const latestSuccess = state.ci.runs.find((run) => ciStatusValue(run) === 'success');
+    importButton.disabled = state.ci.importing || !latestSuccess;
+    importButton.textContent = state.ci.importing ? t('ci.importing') : t('ci.import');
+  }
   const runButton = $('#ci-run-start');
   if (runButton) {
     runButton.disabled = state.ci.dispatching || state.ci.importing;
     runButton.textContent = state.ci.dispatching ? t('ci.run.waiting') : t('ci.run.start');
   }
-  $('#ci-refresh').disabled = state.ci.loading || state.ci.importing;
+  const refresh = $('#ci-refresh');
+  if (refresh) refresh.disabled = state.ci.loading || state.ci.importing;
 
-  const list = $('#ci-runs');
-  const empty = $('#ci-empty');
-  if (state.ci.error) {
-    list.innerHTML = '';
-    empty.hidden = false;
-    empty.textContent = state.ci.error;
-  } else if (state.ci.runs.length === 0) {
-    list.innerHTML = '';
-    empty.hidden = false;
-    empty.textContent = t('ci.empty');
-  } else {
-    empty.hidden = true;
-    list.innerHTML = state.ci.runs.map((run) => {
-      const importedEntry = (cfg.importedRuns || []).find((item) => String(item.runId) === String(run.id));
-      const imported = Boolean(importedEntry);
-      const date = run.createdAt ? fmtDateShort(Date.parse(run.createdAt)) : '—';
-      const status = ciStatusValue(run);
-      const reportLink = importedEntry && importedEntry.reportPath
-        ? `<a class="btn" href="/${esc(importedEntry.reportPath)}" target="_blank" rel="noopener">${esc(t('ci.imported.viewReport'))}</a>`
-        : '';
-      const importedActions = imported
-        ? `${reportLink}
-           <button type="button" class="btn" data-ci-imported-detail="${esc(importedEntry.runId)}">${esc(t('ci.imported.detail'))}</button>
-           <button type="button" class="btn danger" data-ci-imported-delete="${esc(importedEntry.runId)}" title="${esc(t('ci.imported.delete'))}" aria-label="${esc(t('ci.imported.delete'))}">×</button>`
-        : `<button type="button" class="btn ${status === 'success' ? 'primary' : ''}" data-ci-import="${esc(run.id)}" ${status !== 'success' || state.ci.importing ? 'disabled' : ''}>
-             ${esc(t('ci.import.run'))}
-           </button>`;
-      return `
-        <article class="ci-run ${imported ? 'is-imported' : ''}">
-          <div class="ci-run-main">
-            <div class="ci-run-title">
-              <span class="ci-dot ${ciStatusClass(run)}" aria-hidden="true"></span>
-              #${esc(num(run.runNumber))} · ${esc(run.name || 'CACHAI-QA')}
-              ${imported ? `<span class="badge info">${esc(t('ci.imported'))}</span>` : ''}
-            </div>
-            <div class="ci-run-meta">
-              <span>${esc(t('ci.branch'))}: ${esc(run.branch || '—')}</span>
-              <span>${esc(date)}</span>
-              <span>${esc(ciStatusLabel(run))}</span>
-            </div>
-          </div>
-          <div class="ci-run-actions">
-            ${run.htmlUrl ? `<a class="btn ghost" href="${esc(run.htmlUrl)}" target="_blank" rel="noopener">${esc(t('ci.open'))}</a>` : ''}
-            ${importedActions}
-          </div>
-        </article>`;
-    }).join('');
-  }
-
-  const last = $('#ci-last');
-  const lastText = $('#ci-last-text');
-  if (cfg.lastImportedRunId) {
-    last.hidden = false;
-    const date = cfg.lastImportedAt ? fmtDateShort(Date.parse(cfg.lastImportedAt)) : '—';
-    lastText.textContent = t('ci.last.text', { id: cfg.lastImportedRunId, date });
-  } else {
-    last.hidden = false;
-    lastText.textContent = t('ci.last.none');
-  }
-
-  renderCiScan();
+  renderCiRemoteRuns(cfg);
   renderCiImported();
-  renderCiErrors();
+  renderCiDetail();
+  renderCiScan();
+
+  const remoteCard = $('#ci-remote-card');
+  if (remoteCard && !state.ci.remoteOpened
+    && ciImportedRuns().length === 0
+    && (state.ci.runs || []).length > 0) {
+    remoteCard.open = true;
+    state.ci.remoteOpened = true;
+  }
 }
 
 async function loadCi() {
   state.ci.loading = true;
   renderCi();
   try {
-    const [configRes, runsRes] = await Promise.all([
-      fetch('/api/ci/config'),
-      fetch('/api/ci/runs'),
-      loadCiScan()
-    ]);
+    const configRes = await fetch('/api/ci/config');
     const config = await configRes.json();
-    const runsPayload = await runsRes.json();
     state.ci.config = config;
-    state.ci.runs = Array.isArray(runsPayload.runs) ? runsPayload.runs : [];
-    state.ci.error = runsPayload.error || '';
-    await loadCiErrors();
+
+    if (config.configured) {
+      const runsRes = await fetch('/api/ci/runs');
+      const runsPayload = await runsRes.json();
+      state.ci.runs = Array.isArray(runsPayload.runs) ? runsPayload.runs : [];
+      state.ci.error = runsPayload.error || '';
+    } else {
+      state.ci.runs = [];
+      state.ci.error = '';
+    }
 
     renderCi();
 
-    if (config.configured && config.autoImport) {
+    if (config.configured && config.autoImport && !state.ci.skipAutoImport) {
       const latest = state.ci.runs.find((run) => ciStatusValue(run) === 'success');
       if (latest && String(latest.id) !== String(config.lastImportedRunId)) {
         await importCi(latest.id, true);
+        return;
       }
     }
+
+    await ensureCiSelection();
   } catch (e) {
     state.ci.error = String(e && e.message ? e.message : e);
-    renderCi();
   } finally {
     state.ci.loading = false;
     renderCi();
@@ -2818,6 +3350,7 @@ async function pollCiRun(knownIds, attempt) {
 async function importCi(runId, silent) {
   if (!runId || state.ci.importing) return;
   state.ci.importing = true;
+  state.ci.skipAutoImport = false;
   renderCi();
 
   try {
@@ -2830,8 +3363,8 @@ async function importCi(runId, silent) {
     if (!res.ok) throw new Error(data.error || t('ci.import.error'));
 
     state.ci.selectedRunId = String(data.runId);
-    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadCiScan()]);
-    toast(t('ci.import.ok'));
+    await Promise.all([loadOverview(), loadScans(), loadTests(), loadRuns(), loadBrowserStack()]);
+    if (!silent) toast(t('ci.import.ok'));
     await loadCi();
   } catch (e) {
     toast(String(e && e.message ? e.message : t('ci.import.error')), true);
@@ -2870,6 +3403,7 @@ function setScanFilter(type) {
 function setRunFilter(type) {
   state.runFilter = type;
   renderRuns();
+  if (type === 'browserstack') ensureBrowserstackSelection();
 }
 
 /* ------------------------------------------------------------------ *
@@ -2921,8 +3455,10 @@ function bind() {
     if (latest) importCi(latest.id, false);
   });
   $('#ci-runs').addEventListener('click', (event) => {
-    const button = event.target.closest('[data-ci-import]');
-    if (button) importCi(button.dataset.ciImport, false);
+    const importButton = event.target.closest('[data-ci-import]');
+    if (importButton) { importCi(importButton.dataset.ciImport, false); return; }
+    const hideButton = event.target.closest('[data-ci-hide]');
+    if (hideButton) hideCiRun(hideButton.dataset.ciHide, true);
   });
 
   $('#scans-list').addEventListener('click', (event) => {
@@ -2934,11 +3470,20 @@ function bind() {
     if (del) deleteScan(del.dataset.delete);
   });
 
-  ['#runs-list-playwright', '#runs-list-cucumber'].forEach((selector) => {
+  ['#runs-list-playwright', '#runs-list-cucumber', '#runs-list-browserstack'].forEach((selector) => {
     const list = $(selector);
     if (!list) return;
-    const kind = selector.includes('playwright') ? 'playwright' : 'cucumber';
+    const kind = selector.includes('playwright')
+      ? 'playwright'
+      : selector.includes('browserstack')
+        ? 'browserstack'
+        : 'cucumber';
     list.addEventListener('click', (event) => {
+      const download = event.target.closest('[data-run-download]');
+      if (download) {
+        downloadRun(download.dataset.runKind || kind, download.dataset.runDownload);
+        return;
+      }
       const remove = event.target.closest('[data-run-delete]');
       if (remove) {
         deleteRun(kind, remove.dataset.runDelete);
@@ -2949,11 +3494,16 @@ function bind() {
     });
   });
 
-  const browserstackList = $('#runs-list-browserstack');
-  if (browserstackList) {
-    browserstackList.addEventListener('click', (event) => {
-      const remove = event.target.closest('[data-browserstack-delete]');
-      if (remove) deleteRun('playwright', remove.dataset.browserstackDelete);
+  const browserstackDownload = $('#browserstack-download');
+  if (browserstackDownload) {
+    browserstackDownload.addEventListener('click', () => downloadRun('browserstack', browserstackDownload.dataset.download));
+  }
+
+  const ciDownload = $('#ci-download');
+  if (ciDownload) {
+    ciDownload.addEventListener('click', () => {
+      const entry = ciImportedRuns().find((item) => String(item.runId) === String(ciDownload.dataset.ciEntry));
+      downloadCiEntry(entry);
     });
   }
 
@@ -2994,14 +3544,37 @@ function bind() {
   });
 
   document.addEventListener('click', (event) => {
+    const glossaryCode = event.target.closest('[data-glossary-code]');
+    if (glossaryCode) {
+      event.preventDefault();
+      event.stopPropagation();
+      openGlossaryCode(glossaryCode.dataset.glossaryCode);
+      return;
+    }
     const copy = event.target.closest('[data-copy]');
     if (copy) copyText(copy.dataset.copy);
     const ciScan = event.target.closest('[data-ci-scan-view]');
-    if (ciScan) openScan(ciScan.dataset.ciScanView || 'scan-report/ci-scan.json');
-    const ciDetail = event.target.closest('[data-ci-imported-detail]');
-    if (ciDetail) selectCiImported(ciDetail.dataset.ciImportedDetail);
-    const ciDelete = event.target.closest('[data-ci-imported-delete]');
-    if (ciDelete) deleteCiImported(ciDelete.dataset.ciImportedDelete);
+    if (ciScan && ciScan.dataset.ciScanView) openScan(ciScan.dataset.ciScanView);
+    const ciScanDownload = event.target.closest('[data-ci-scan-download]');
+    if (ciScanDownload && ciScanDownload.dataset.ciScanDownload) downloadReport(ciScanDownload.dataset.ciScanDownload);
+    const ciScanDelete = event.target.closest('[data-ci-scan-delete]');
+    if (ciScanDelete && ciScanDelete.dataset.ciScanDelete) deleteCiScan(ciScanDelete.dataset.ciScanDelete);
+    const ciSelect = event.target.closest('[data-ci-select]');
+    if (ciSelect) selectCiRun(ciSelect.dataset.ciSelect);
+    const ciDownload = event.target.closest('[data-ci-download]');
+    if (ciDownload) {
+      const entry = ciImportedRuns().find((item) => String(item.runId) === String(ciDownload.dataset.ciDownload));
+      downloadCiEntry(entry);
+    }
+    const ciDelete = event.target.closest('[data-ci-delete]');
+    if (ciDelete) deleteCiImported(ciDelete.dataset.ciDelete);
+    const ciRestore = event.target.closest('[data-ci-hidden-restore]');
+    if (ciRestore) restoreCiHidden();
+    const ciLatest = event.target.closest('[data-ci-latest]');
+    if (ciLatest) {
+      const last = state.ci.config && state.ci.config.lastImportedRunId;
+      if (last) selectCiRun(last);
+    }
     const latest = event.target.closest('[data-run-latest]');
     if (latest) clearSelectedRun(latest.dataset.runLatest);
     if (event.target.closest('#home-show-all')) {
